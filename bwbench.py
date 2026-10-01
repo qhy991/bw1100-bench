@@ -24,10 +24,11 @@ def upstream():
         raise RuntimeError("audit/check require Python >=3.10 in the existing DTK environment; list uses only stdlib")
     source = ROOT / ".deps/sol-execbench"
     expected = document("sources.lock.json")["sol_execbench"]["revision"]
-    observed = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+    git = ["git", "-c", "safe.directory=" + str(source), "-C", str(source)]
+    observed = subprocess.check_output(git + ["rev-parse", "HEAD"], text=True).strip()
     if observed != expected:
         raise RuntimeError("SOL-ExecBench revision differs from sources.lock.json")
-    subprocess.run(["git", "-C", str(source), "diff", "--quiet", "HEAD", "--", "src/sol_execbench/core"], check=True)
+    subprocess.run(git + ["diff", "--quiet", "HEAD", "--", "src/sol_execbench/core"], check=True)
     sys.path.insert(0, str(source / "src"))
     return source
 
