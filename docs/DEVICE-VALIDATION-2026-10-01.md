@@ -4,7 +4,9 @@ Evidence owner: the named local Cake admission receipts and benchmark result JSO
 under the tested node's ignored `.local/` and `results/` directories. The upstream
 benchmark source is `a9fa0804c793d438e70850c33fe34426e66d53dd` and the dataset
 revision is `63699402f003496acc3af4eb534a5304a8ac1ea9`. The benchmark runner
-source used for the accepted device checks is `9b693e011be04df7da1c4f1b1bd8f9c103188c6e`.
+source used for the first three accepted device checks is
+`9b693e011be04df7da1c4f1b1bd8f9c103188c6e`. The final reusable-entry
+smoke uses `3608a766318482167924f0425470827a801f6bdf`.
 
 The first host had eight HCU cards at approximately 97% VRAM occupancy. Its
 existing DTK image passed the 10-task/160-workload audit and L1/069 reference
@@ -23,6 +25,7 @@ Hygon PyTorch 2.11.0, Triton 3.6.0, and HIP 6.3.26113. Its local image identity 
 | L1/069 independent Torch candidate, original smoke workload, two rounds | 2/2 PASS, maximum absolute error 0; partial only | `results/l1-069-device-candidate-node4-smoke-007-gitfix-20261001.json`; Cake `hip-276bbbcabba0` |
 | L1/069 independent Torch candidate, all 16 original workloads, ten fresh rounds each | 160/160 PASS, 0 failures, maximum absolute error 0, `full_device_correctness=true` for this one task | `results/l1-069-device-candidate-node4-full-001-20261001.json`; Cake `hip-c04947eada1b` |
 | L2/060 original smoke workload, two rounds of reference selfcheck | 2/2 PASS; demonstrates the reference path runs on HCU, no independent candidate qualification | `results/l2-060-device-reference-smoke-001-20261001.json`; Cake `hip-32e9452d60c7` |
+| Published `scripts/dtk.sh gpu` with `examples/l1_069_torch_baseline.py`, original L1/069 smoke workload, two rounds | 2/2 PASS, maximum absolute error 0; validates the reusable container/Cake launch entry, partial workload only | `results/l1-069-gpu-facade-20261001.json` and `results/l1-069-gpu-facade-cake-20261001-terminal.json`; Cake `hip-da0670085525` |
 
 For every device attempt, the Cake Hygon `local_broker` issued a local-serialized
 job id. It coordinates this container and child. It does not exclude external GPU
