@@ -52,6 +52,9 @@ and HCU1 job `bw-9ddbe6bc84ec`. The ignored raw report is
 its terminal receipt is
 `results/l1-048-flaggems-top-hcu1-full-admission-001-terminal.json`
 (SHA-256 `54dc7b88020794f2da0a1c9586a4dfe2445900ab9d73bcbcbf3519bd0a76c932`).
+After commit `03640a6` was applied to node4's primary checkout, its exact
+runner and top-level adapter passed a fresh 2/2 HCU1 smoke (job
+`bw-15cae0a76049`, terminal status `completed`, exit 0, HCU1 0% VRAM).
 The original FlagGems source archive SHA-256 is
 `b06d741b4d1f2978a539c38ced0ec41d1621455e5dec38b6350e5c9943dcda39`;
 node4 retains it at `.deps/archives/flag_gems_src_540_node2.clean.tar.gz`.
@@ -84,11 +87,12 @@ adapter/rejected row can support a strong-community speedup claim. This
 inventory preserves gaps without changing task IDs, original dimensions, or
 reference semantics.
 
-The L1/058 timeout is an unresolved resource incident: job `bw-3ef7da817fac`
-has terminal status `not_qualified`/124, but its named container remained live
-on HCU0 after the host Docker client timed out. Ordinary `docker stop` and
+The L1/058 timeout was a resource incident: job `bw-3ef7da817fac` has
+terminal status `not_qualified`/124, but its named container remained live on
+HCU0 at the recorded post-timeout snapshots. Ordinary `docker stop` and
 `docker kill` were denied by the root:docker `hcu.sock`; no passwordless sudo
-exists. HCU0 is **not released** until a privileged owner stops that exact
-container and a fresh HCU/KFD check confirms it. Subsequent bounded checks
-used observed-idle HCU1 only. The replacement inner timeout's HCU1 selfcheck
-(`bw-a86a4f64181d`) exited 124 and confirmed its own container removed.
+exists. Do not infer that HCU0 is now released from this historical record:
+check the live container and HCU/KFD state, and use it only after privileged
+cleanup is observed. Subsequent bounded checks used observed-idle HCU1 only.
+The replacement inner timeout's HCU1 selfcheck (`bw-a86a4f64181d`) exited
+124 and confirmed its own container removed.
