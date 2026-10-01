@@ -13,7 +13,11 @@ visible. The image is inspected and its immutable ID recorded. A transient,
 read-only-rootfs DTK container runs the exact command on the chosen HCU, with
 network disabled, a writable `/tmp`, read-only hyhal mount and the benchmark
 repository mounted at `/work`. The child has a bounded timeout, default 180 s;
-set `BWBENCH_TIMEOUT` for an explicitly larger case (maximum 3600 s).
+set `BWBENCH_TIMEOUT` for an explicitly larger case (10–3600 s). The container
+uses GNU `timeout` to TERM the command first and KILL it after a bounded grace
+period, leaving up to 30 s for `docker run --rm` to exit before the host-side
+deadline. If that outer deadline still fires, the terminal receipt is not
+qualified; check whether the named container remains before using that HCU.
 Both CPU and GPU modes set `HOME=/tmp` because the root filesystem is
 read-only. This lets libraries such as MIOpen create their user cache and lock
 files without modifying the image. CPU mode also exports the host username

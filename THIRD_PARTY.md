@@ -12,6 +12,11 @@
 - Selection descriptions and difficulty estimates are this project's editorial
   choices. IDs and URLs identify upstream resources; no measured performance or
   official NVIDIA leaderboard qualification is claimed.
+- Community operator baseline: FlagOS/FlagGems 5.4.0dev, Apache-2.0, taken
+  from the existing FlagRelease Hygon image. `scripts/prepare_flag_gems.py`
+  accepts only the recorded source-archive hash and materializes it under
+  ignored `.deps/`. This repository commits only its own thin adapter, source
+  hashes and verification metadata; it does not redistribute FlagGems source.
 
 Do not commit `.data/`, `.deps/`, materialized problems, raw input tensors, model
 weights, or private machine inspection output. Publishing benchmark results does

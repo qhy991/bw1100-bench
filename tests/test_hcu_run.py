@@ -74,6 +74,8 @@ class HcuRunTests(unittest.TestCase):
                     self.assertIn('sha256:pinned', command)
                     self.assertNotIn('pinned-image', command)
                     self.assertIn('HOME=/tmp', command)
+                    self.assertIn('14', command)
+                    self.assertTrue(any('/usr/bin/timeout' in part for part in command))
                     return subprocess.CompletedProcess(command, 0)
                 raise AssertionError(command)
 
@@ -88,6 +90,7 @@ class HcuRunTests(unittest.TestCase):
             self.assertEqual(terminal['status'], 'not_qualified')
             self.assertEqual(terminal['after_vram'], '97%')
             self.assertFalse(terminal['physical_exclusivity'])
+            self.assertEqual(terminal['container_timeout_s'], 14)
 
 
 if __name__ == '__main__':

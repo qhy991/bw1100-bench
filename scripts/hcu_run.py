@@ -56,8 +56,8 @@ def main():
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command[1:] if args.command and args.command[0] == '--' else args.command
-    if not command or args.device < 0 or not 1 <= args.timeout <= 3600:
-        parser.error('command, nonnegative HCU id and timeout 1..3600 required')
+    if not command or args.device < 0 or not 10 <= args.timeout <= 3600:
+        parser.error('command, nonnegative HCU id and timeout 10..3600 required')
     receipt, terminal = _receipt_paths(args.receipt)
     LOCK_DIR.mkdir(parents=True, exist_ok=True)
     lock_path = LOCK_DIR / ('hcu-%d.lock' % args.device)
@@ -76,6 +76,9 @@ def main():
             raise RuntimeError('selected HCU is not idle by observed VRAM/KFD check')
         job_id = 'bw-' + uuid.uuid4().hex[:12]
         started = time.time()
+        reserve = min(30, max(2, args.timeout // 3))
+        child_timeout = args.timeout - reserve
+        kill_after = max(1, reserve // 2)
         admission = {
             'schema': 'bw1100-bench.hcu-admission.v1',
             'job_id': job_id,
@@ -88,9 +91,16 @@ def main():
             'before_kfd_visible': before_kfd,
             'command': command,
             'timeout_s': args.timeout,
+            'container_timeout_s': child_timeout,
             'started_at': started,
         }
         _write_new(receipt, admission)
+        bootstrap = (
+            'source /opt/dtk/env.sh; '
+            'export LD_LIBRARY_PATH="/opt/hyhal/lib:${LD_LIBRARY_PATH:-}"; '
+            'export PYTHONPATH=/work/.deps/sol-execbench/src; '
+            'exec /usr/bin/timeout --signal=TERM --kill-after=%ds "$@"'
+        ) % kill_after
         docker_command = [
             'docker', 'run', '--rm', '--name', job_id,
             '--network', 'none', '--read-only',
@@ -102,13 +112,15 @@ def main():
             '--runtime', 'dtk', '--privileged',
             '--device', '/dev/kfd', '--device', '/dev/dri', '--device', '/dev/mkfd',
             '--entrypoint', 'bash', image_id,
-            '-c', 'source /opt/dtk/env.sh; export LD_LIBRARY_PATH="/opt/hyhal/lib:${LD_LIBRARY_PATH:-}"; export PYTHONPATH=/work/.deps/sol-execbench/src; exec "$@"',
-            'bash',
+            '-c', bootstrap,
+            'bash', str(child_timeout),
         ] + command
         try:
             child = subprocess.run(docker_command, timeout=args.timeout, check=False)
             exit_code = child.returncode
-            reason = 'normal_exit' if exit_code == 0 else 'nonzero_exit'
+            reason = ('normal_exit' if exit_code == 0 else
+                      'container_timeout_or_exit_124' if exit_code == 124 else
+                      'nonzero_exit')
         except subprocess.TimeoutExpired:
             exit_code, reason = 124, 'timeout_check_container_state'
         time.sleep(1)
