@@ -8,10 +8,11 @@
   local gates explicit. Do not silently change shape, precision or tolerances.
 - CPU/selfcheck/smoke/partial results never become full device correctness or timing.
   The runner is correctness-only; it is not the official NVIDIA evaluator.
-- Reuse Cake's inspected DCU environment/admission where applicable. `docker exec`
-  failure does not imply `docker run --rm` failure. Keep existing services untouched.
-- A container wrapper does not allocate GPUs. Use an authorized, observed allocation
-  and bind the actual Hygon environment. Never label a per-user lock physical exclusivity.
+- The GPU entry is owned by this repository: `scripts/dtk.sh gpu` calls
+  `scripts/hcu_run.py`, with no dependency on another project. Inspect live HCU
+  and KFD occupancy before admission; leave existing services untouched.
+- The task-local per-user lock serializes this suite only. It is not physical
+  GPU exclusivity and cannot rule out other users or containers.
 - Implement first, then run focused CPU regression tests with
   `python -m unittest discover -s tests -v`. Run `bwbench.py audit` after materialization.
 - Preserve failed and historical reports; all execution output paths are create-only.

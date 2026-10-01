@@ -1,5 +1,7 @@
 # BW1100/BW1101 device-path validation, 2026-10-01
 
+Historical receipt: this record describes the earlier admission route used on 2026-10-01. Its raw outcomes remain unchanged. The current independent suite entry is documented in `docs/DTK-ADMISSION.md` and must receive fresh device receipts before claiming qualification.
+
 Evidence owner: the named local Cake admission receipts and benchmark result JSON
 under the tested node's ignored `.local/` and `results/` directories. The upstream
 benchmark source is `a9fa0804c793d438e70850c33fe34426e66d53dd` and the dataset

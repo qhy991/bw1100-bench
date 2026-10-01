@@ -87,28 +87,34 @@ python bwbench.py check --task L1/069_rms_norm --device cuda:0 \
 
 测试规则、已知阈值字段差异及补充的整数门见 [docs/CORRECTNESS.md](docs/CORRECTNESS.md)。
 
-## 使用现有 DTK 镜像与 Cake 经验
+## 独立 DTK/HCU 执行入口
 
-Cake 已记录 `docker exec` 的 HCU socket 拒绝与临时 `docker run --rm` 的区别，
-也已有 Hygon 本地串行 admission。先复用现有镜像和这条执行方式；详见
-[docs/CAKE.md](docs/CAKE.md)。`scripts/dtk.sh` 是临时容器入口，不是 GPU 分配器。
+本仓库的 GPU 路径由 `scripts/dtk.sh` 和 `scripts/hcu_run.py` 自己管理，
+不依赖其他项目的源码、Executor 或 admission。CPU 与 GPU 均使用所在机器已经核对过的
+DTK 镜像及临时 `docker run --rm`；GPU 模式以新 JSON 收据记录本任务本地锁、
+选定 HCU、镜像 digest、执行命令、容器终态和运行前后占用。详细合同见
+[docs/DTK-ADMISSION.md](docs/DTK-ADMISSION.md)。
 
 ```bash
-# IMAGE 使用所在机器已有、核对过的厂商镜像
+# CPU 审计，不申请 HCU
 bash scripts/dtk.sh cpu IMAGE python3 bwbench.py audit --output .local/container-audit.json
 
-# 确认设备空闲后，提供 Cake checkout、设备选择和新收据路径
-CAKE_CHECKOUT=/path/to/oci-dcu HIP_VISIBLE_DEVICES="$ALLOCATED_HIP_DEVICE" \
-  bash scripts/dtk.sh gpu IMAGE results/rmsnorm-cake-admission.json \
+# 仅在实时确认 HCU0 空闲后，执行一项有界正确性检查
+HIP_VISIBLE_DEVICES=0 BWBENCH_TIMEOUT=180 \
+  bash scripts/dtk.sh gpu IMAGE results/rmsnorm-admission.json \
   python3 bwbench.py check --task L1/069_rms_norm --device cuda:0 \
-  --candidate /work/my_candidate.py --output results/device-rmsnorm.json
+  --candidate /work/examples/l1_069_torch_baseline.py \
+  --workloads smoke --rounds 2 --output results/rmsnorm-device.json
 ```
 
-CPU 模式使用宿主 UID。HCU 模式按照已验证的节点路径使用 root/privileged DTK 容器，
-映射 `/dev/kfd`、`/dev/dri`、`/dev/mkfd`，并调用 Cake 的 Hygon 本地 admission；
-这台节点以普通容器 UID 运行时，`rocminfo` 无法枚举 HCU。两个模式都使用只读根文件系统、
-只读 hyhal 挂载和可执行临时目录。Cake 收据与结果须使用新路径；本地 admission
-不等于整机物理独占，也不自动停止已有服务。
+GPU 模式仍需 DTK runtime、root/privileged 容器身份及 `/dev/kfd`、`/dev/dri`、
+`/dev/mkfd` 和只读 `/opt/hyhal` 挂载；这解决的是当前镜像的设备入口，
+不是全机器排他分配。启动前脚本检查所选 HCU 显存和可见 KFD 进程，并用当前用户
+的本地锁串行化本套件作业；其他用户活动仍须标记为 `not_excluded`。
+遇到无终态收据、SSH 中断或设备未释放时先观察实际容器与 HCU，不能盲目重试。
+历史设备检查的原始路径和结论仍保留在
+[docs/DEVICE-VALIDATION-2026-10-01.md](docs/DEVICE-VALIDATION-2026-10-01.md)，
+它们不自动转成新入口的验证结果。
 
 ## 软件验证
 
