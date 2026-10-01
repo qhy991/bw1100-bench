@@ -17,9 +17,14 @@
 L1/L2 的原始 ABI 包含 BF16、int64、bool、动态 shape 和复杂子图；Cake 的某个算子
 或某个固定 shape 通过不能替代本工作集的 160 个原始 workload。
 
-`scripts/dtk.sh` 使用标准临时容器命令，不改 Docker 包装程序、用户组或 socket。
-GPU 设备选择来自调用方已经获得的分配；该脚本自身不取得租约，不制造 Cake receipt。
-如需 Cake 的正式 Executor/receipt，必须走该项目的绑定 worker 与 admission 路径。
+`scripts/dtk.sh` 复用标准临时容器命令，并在 GPU 模式直接调用当前 Cake checkout 的
+Hygon `local_broker` admission。它不改 Docker 包装程序、用户组或 socket，也不声称
+本地锁能排除其他用户和容器。调用方应先观察 KFD 占用、选定 HCU，并给出新收据路径。
+这条路径记录本地 admission 与 benchmark 正确性；它不是 Cake 的正式 Executor receipt。
+
+现场验证表明：此节点的 PyTorch 2.11/DTK 镜像在普通容器 UID 下 `rocminfo` 退出 8，
+在现有 vLLM 使用的 root/privileged 身份下才识别一张 `BW1101/gfx938`。GPU 模式
+据此采用后者，同时维持只读根、无网络和只读 hyhal 挂载。CPU 模式继续用宿主 UID。
 
 历史 runbook 不是当前运行资格。每台机器仍应核对具体镜像、PyTorch/Triton 版本、
 HCU 枚举与实际占用。不得由一次 `docker exec` 拒绝推断所有 GPU 执行路径都不可用。

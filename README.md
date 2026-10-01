@@ -97,14 +97,18 @@ Cake 已记录 `docker exec` 的 HCU socket 拒绝与临时 `docker run --rm` �
 # IMAGE 使用所在机器已有、核对过的厂商镜像
 bash scripts/dtk.sh cpu IMAGE python3 bwbench.py audit --output .local/container-audit.json
 
-# 设备已由现有分配流程确定后，将可见设备传给临时容器
-HIP_VISIBLE_DEVICES="$ALLOCATED_HIP_DEVICE" bash scripts/dtk.sh gpu IMAGE \
+# 确认设备空闲后，提供 Cake checkout、设备选择和新收据路径
+CAKE_CHECKOUT=/path/to/oci-dcu HIP_VISIBLE_DEVICES="$ALLOCATED_HIP_DEVICE" \
+  bash scripts/dtk.sh gpu IMAGE results/rmsnorm-cake-admission.json \
   python3 bwbench.py check --task L1/069_rms_norm --device cuda:0 \
   --candidate /work/my_candidate.py --output results/device-rmsnorm.json
 ```
 
-容器使用当前宿主 UID 写工作目录、只读根文件系统和只读 hyhal 挂载；临时目录可执行。
-它不运行模型服务，不自动分配或抢占设备，也不把本地锁表述为物理独占。
+CPU 模式使用宿主 UID。HCU 模式按照已验证的节点路径使用 root/privileged DTK 容器，
+映射 `/dev/kfd`、`/dev/dri`、`/dev/mkfd`，并调用 Cake 的 Hygon 本地 admission；
+这台节点以普通容器 UID 运行时，`rocminfo` 无法枚举 HCU。两个模式都使用只读根文件系统、
+只读 hyhal 挂载和可执行临时目录。Cake 收据与结果须使用新路径；本地 admission
+不等于整机物理独占，也不自动停止已有服务。
 
 ## 软件验证
 
