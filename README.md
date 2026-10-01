@@ -9,6 +9,12 @@
 题目与工作量的规范来源是 [suite.json](suite.json) 和
 [sources.lock.json](sources.lock.json)。
 
+原题 `reference.py` 只是真值来源，**十题并非都已有 vLLM 性能 baseline**。
+逐题社区实现、语义缺口和当前设备资格见
+[baselines/README.md](baselines/README.md)。已接入的适配器可作为下文
+`--candidate` 文件接受完全相同的原始正确性检查；尚未通过整题设备门的实现
+不能充当强基线或速度比的分母。
+
 ## 选题
 
 难度 1–5 是对迁移和优化工作的人工分层，不是实测排名；L1/L2 是上游分类，
