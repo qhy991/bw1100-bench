@@ -14,7 +14,6 @@
 [baselines/README.md](baselines/README.md)。已接入的适配器可作为下文
 `--candidate` 文件接受完全相同的原始正确性检查；尚未通过整题设备门的实现
 不能充当强基线或速度比的分母。
-`baselines/probes/` 保存失败路线的可复查源码，不属于可用基线。
 
 ## 选题
 
