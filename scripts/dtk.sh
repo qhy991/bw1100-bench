@@ -10,7 +10,8 @@ case "$mode" in
   cpu)
     args=(--rm --network none --read-only --tmpfs /tmp:rw,exec,mode=1777,size=2g
           -v "$root:/work" -w /work -v /opt/hyhal:/opt/hyhal:ro
-          -e PYTHONDONTWRITEBYTECODE=1 --runtime runc
+          -e PYTHONDONTWRITEBYTECODE=1 -e HOME=/tmp
+          -e "USER=$(id -un)" -e "LOGNAME=$(id -un)" --runtime runc
           --user "$(id -u):$(id -g)"
           -e HIP_VISIBLE_DEVICES=-1 -e ROCR_VISIBLE_DEVICES=-1 -e CUDA_VISIBLE_DEVICES=-1)
     exec docker run "${args[@]}" --entrypoint bash "$image" -c \

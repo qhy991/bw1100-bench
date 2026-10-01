@@ -73,6 +73,7 @@ class HcuRunTests(unittest.TestCase):
                 if command[:2] == ['docker', 'run']:
                     self.assertIn('sha256:pinned', command)
                     self.assertNotIn('pinned-image', command)
+                    self.assertIn('HOME=/tmp', command)
                     return subprocess.CompletedProcess(command, 0)
                 raise AssertionError(command)
 

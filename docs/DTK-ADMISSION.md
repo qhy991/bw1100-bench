@@ -14,6 +14,11 @@ read-only-rootfs DTK container runs the exact command on the chosen HCU, with
 network disabled, a writable `/tmp`, read-only hyhal mount and the benchmark
 repository mounted at `/work`. The child has a bounded timeout, default 180 s;
 set `BWBENCH_TIMEOUT` for an explicitly larger case (maximum 3600 s).
+Both CPU and GPU modes set `HOME=/tmp` because the root filesystem is
+read-only. This lets libraries such as MIOpen create their user cache and lock
+files without modifying the image. CPU mode also exports the host username
+for Python packages that call `getpass.getuser()` under a UID absent from the
+container's passwd file.
 
 The output path is create-only. The initial `<name>.json` records admission,
 source command, image, device and deadline; `<name>-terminal.json` records exit

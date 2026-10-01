@@ -97,6 +97,7 @@ def main():
             '--tmpfs', '/tmp:rw,exec,mode=1777,size=2g',
             '-v', str(ROOT) + ':/work', '-v', '/opt/hyhal:/opt/hyhal:ro',
             '-w', '/work', '-e', 'PYTHONDONTWRITEBYTECODE=1',
+            '-e', 'HOME=/tmp',
             '-e', 'HIP_VISIBLE_DEVICES=%d' % args.device,
             '--runtime', 'dtk', '--privileged',
             '--device', '/dev/kfd', '--device', '/dev/dri', '--device', '/dev/mkfd',
@@ -106,7 +107,8 @@ def main():
         ] + command
         try:
             child = subprocess.run(docker_command, timeout=args.timeout, check=False)
-            exit_code, reason = child.returncode, 'normal_exit'
+            exit_code = child.returncode
+            reason = 'normal_exit' if exit_code == 0 else 'nonzero_exit'
         except subprocess.TimeoutExpired:
             exit_code, reason = 124, 'timeout_check_container_state'
         time.sleep(1)
