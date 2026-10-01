@@ -24,6 +24,11 @@ its terminal receipt's SHA-256 is
 
 This qualifies the independent entry and the exact L1/069 candidate's complete
 correctness workload on that device. It does not qualify the other nine tasks,
-physical exclusivity, or performance. The source in this record ran the image
-by its inspected tag; a subsequent change pins `docker run` to the inspected
-image ID to close the inspect/run identity gap and needs its own device smoke.
+physical exclusivity, or performance. The source in the two runs above used the
+inspected image tag. Commit `0161706c0a91ea35fcdbdc903d2ba18a1ba047d3`
+then pinned `docker run` to the inspected image ID. Its fresh smoke report
+`l1-069-pinned-image-smoke-001.json` passed 2/2; admission job
+`bw-1dbd354c78ce` completed with exit 0, 0% post-run VRAM, no visible KFD
+process and no remaining container. The report and terminal receipt SHA-256
+values are `107cd6b9f11c74f544ef435858c78b7ad8485868e55362e76fddb2eaa8fe4c0e`
+and `e11dbf2fc1b000bdb4e00c8bcd74a639a8419f4b45a22ef4edea3339b96b919d`.
