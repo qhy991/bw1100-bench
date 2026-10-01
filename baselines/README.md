@@ -18,7 +18,7 @@ it has not been qualified as a baseline on the free node4 HCU.
 
 | Task | Community path considered | Current classification | Evidence or missing gate |
 | --- | --- | --- | --- |
-| L1/069 residual RMSNorm | vLLM `fused_add_rms_norm` AITER implementation | Direct community fused path | `l1_069_vllm_aiter_fused.py` is copied from the separate Ralph experiment. There it passed 16×10 on gfx938; this repository entry still needs its own fresh check. The alternative `vllm_c` path was rejected in that image: in-place ABI and a GPU no-op. |
+| L1/069 residual RMSNorm | vLLM `fused_add_rms_norm` AITER implementation | **Full device correctness qualified** | `l1_069_vllm_aiter_fused.py` passed the original 16 workloads × 10 rounds, 160/160, on gfx938 through this repository's standalone runner. The alternative `vllm_c` path was rejected in the separate Ralph experiment: in-place ABI and a GPU no-op. No new paired latency was measured in this branch. |
 | L1/011 Llama3 RoPE cos/sin output | vLLM rotary cache construction and gather | **Adapter only; no strong baseline** | No installed vLLM rotary callable returns the original `(B,S,D,2)` cos/sin ABI; the separate Ralph adapter reconstructs the pattern. Its measured ratio cannot be labeled a win against a direct community implementation. |
 | L1/048 dual GEMM + GELU-tanh gate | vLLM `GeluAndMul(approximate="tanh")` after the two projections | **Rejected in current image** | `probes/l1_048_vllm_gelu_and_mul.py` stopped before device comparison because vLLM CustomOp needs a serving config. Direct inspection found `torch.ops._C.gelu_tanh_and_mul` unregistered and `vllm._rocm_C` absent. No fused community path was qualified; the task's actual reference uses GELU-tanh, not the title's SwiGLU. |
 | L1/058 stable expert bucketing | AITER/vLLM MoE sorting or alignment | Semantic fit unverified | MoE alignment uses padded/token-block outputs; original task requires exact stable permutation and 257 expert offsets. A name match is insufficient. |
@@ -28,6 +28,18 @@ it has not been qualified as a baseline on the free node4 HCU.
 | L2/024 256-expert MoE | vLLM `fused_experts` | **Runtime fault; not qualified** | `probes/l2_024_vllm_fused_moe.py` packed the original gate/up weights and invoked the installed fused kernel. The first original smoke hit an HCU memory-aperture VMFault and exited 139 before any comparison. The container ended and HCU VRAM later returned to 0%; do not repeat this route without a separately justified diagnosis. |
 | L2/060 chunk gated delta rule | Bundled FLA `chunk_gated_delta_rule` | **Rejected for this task** | Separate Ralph experiment failed the first original smoke workload (max_abs ≈9.738): the reference and FLA use different inter-chunk gate conventions. A reference-semantics candidate passed correctness, but there is no qualifying community speed baseline. |
 | L2/056 complete decoder backward | Training-model community backward components | No exact callable identified | Original ABI returns ten gradients with a particular intermediate/rounding chain. vLLM inference has no corresponding whole backward callable. |
+
+The L1/069 qualification is bound to source SHA-256
+`1430ad1e28a40be334b795de13083caa537a03049d92b5148530b2bee63c7b60`
+and node4 job `bw-0a8e51e23d04`. The ignored raw report is
+`results/l1-069-aiter-baseline-v2-full-001.json` (SHA-256
+`bb5f543f3b4e1c795b9646cc95509ee00bf15ec6106c836c4dc23e576602ae17`);
+its terminal receipt is
+`results/l1-069-aiter-baseline-v2-full-admission-001-terminal.json`
+(SHA-256 `9e2fc98f74354855c9c216db626b650bf7f70e26725d9caa03940b2c4bf0d5f1`).
+The result is correctness-only; AITER JIT startup is not a measured speed
+comparison, and the separate Ralph campaign's AITER-relative timing has a
+different candidate/source binding.
 
 The L2/035 qualification is bound to source SHA-256
 `2cfe9f33fee5b7ac3bdbdcc31834bdb7101e78cc726a1eac71a7ab9b05b44d2c`
