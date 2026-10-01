@@ -71,6 +71,8 @@ class HcuRunTests(unittest.TestCase):
                 if command[0] == 'fuser':
                     return subprocess.CompletedProcess(command, 1)
                 if command[:2] == ['docker', 'run']:
+                    self.assertIn('sha256:pinned', command)
+                    self.assertNotIn('pinned-image', command)
                     return subprocess.CompletedProcess(command, 0)
                 raise AssertionError(command)
 

@@ -100,7 +100,7 @@ def main():
             '-e', 'HIP_VISIBLE_DEVICES=%d' % args.device,
             '--runtime', 'dtk', '--privileged',
             '--device', '/dev/kfd', '--device', '/dev/dri', '--device', '/dev/mkfd',
-            '--entrypoint', 'bash', args.image,
+            '--entrypoint', 'bash', image_id,
             '-c', 'source /opt/dtk/env.sh; export LD_LIBRARY_PATH="/opt/hyhal/lib:${LD_LIBRARY_PATH:-}"; export PYTHONPATH=/work/.deps/sol-execbench/src; exec "$@"',
             'bash',
         ] + command

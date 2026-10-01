@@ -115,6 +115,8 @@ GPU 模式仍需 DTK runtime、root/privileged 容器身份及 `/dev/kfd`、`/de
 历史设备检查的原始路径和结论仍保留在
 [docs/DEVICE-VALIDATION-2026-10-01.md](docs/DEVICE-VALIDATION-2026-10-01.md)，
 它们不自动转成新入口的验证结果。
+新入口在 `bw1100-1` 的独立设备检查见
+[docs/STANDALONE-DEVICE-VALIDATION-2026-10-01.md](docs/STANDALONE-DEVICE-VALIDATION-2026-10-01.md)。
 
 ## 软件验证
 
