@@ -50,7 +50,7 @@ def _callable(dim, attention_scaling, device):
 @lru_cache(maxsize=32)
 def _compiled(dim, attention_scaling, device):
     return torch.compile(_callable(dim, attention_scaling, device),
-                         fullgraph=True, dynamic=False)
+                         fullgraph=True, dynamic=True)
 
 
 @torch.no_grad()

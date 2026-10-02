@@ -16,3 +16,9 @@ does not qualify either arm. Preserve the supplied frequency values; recomputing
 standard Llama3 scaling changes this task's unusual input factory. If the
 compiled arm fails, retain that failure and do not label eager as compiled or
 as the fastest available Hygon path.
+
+The first static-shape compiled attempt passed smoke, then stopped at the
+default Dynamo eight-recompile limit during the full original shape grid
+(job `bw-289e4da80113`, exit 1, released HCU2). The next revision uses dynamic
+shape compilation of the same shipped forward; it changes no numeric
+operation or tolerance. Its full gate remains pending.
