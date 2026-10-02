@@ -74,6 +74,22 @@ def main():
         med = {key: statistics.median(values) for key, values in samples.items()}
         drift = abs(med['a1'] - med['a2']) / min(med['a1'], med['a2'])
         forward, reverse = med['ef'] / med['cf'], med['er'] / med['cr']
+        selected = module.run_eager if inputs[0].numel() > 8192 else module.run_compiled
+        pairs = {name: [] for name in ('df', 'sf', 'sr', 'dr', 'sa1', 'sa2', 'da1', 'da2')}
+        # Isolate dispatch cost from the three-arm order effect: the eager
+        # arm between two compiled calls can change the next call's timing.
+        for _ in range(30):
+            pairs['df'].append(timed(module.run, inputs))
+            pairs['sf'].append(timed(selected, inputs))
+        for _ in range(30):
+            pairs['sr'].append(timed(selected, inputs))
+            pairs['dr'].append(timed(module.run, inputs))
+        for _ in range(30):
+            pairs['sa1'].append(timed(selected, inputs))
+            pairs['sa2'].append(timed(selected, inputs))
+            pairs['da1'].append(timed(module.run, inputs))
+            pairs['da2'].append(timed(module.run, inputs))
+        pair_med = {key: statistics.median(values) for key, values in pairs.items()}
         unchanged = all(torch.equal(item, snap) for item, snap in zip(
             (item for item in inputs if isinstance(item, torch.Tensor)), snapshots))
         row = {'workload_uuid': workload.uuid, 'axes': workload.axes,
@@ -86,10 +102,14 @@ def main():
                    med['ef'] if inputs[0].numel() > 8192 else med['cf']),
                'dispatch_over_selected_reverse': med['dr'] / (
                    med['er'] if inputs[0].numel() > 8192 else med['cr']),
+               'dispatch_pair_wall_us': pair_med,
+               'dispatch_pair_over_selected_forward': pair_med['df'] / pair_med['sf'],
+               'dispatch_pair_over_selected_reverse': pair_med['dr'] / pair_med['sr'],
+               'dispatch_pair_samples_us': pairs,
                'inputs_unmutated': unchanged, 'samples_us': samples}
         rows.append(row)
         print(json.dumps({key: value for key, value in row.items()
-                          if key != 'samples_us'}), flush=True)
+                          if key not in ('samples_us', 'dispatch_pair_samples_us')}), flush=True)
     result = {'schema': 'bw1100-bench.community-rope-strength.v2',
               'source_sha256': digest(args.source),
               'full_gate_sha256': digest(args.gate),
