@@ -34,7 +34,13 @@ denominator. Raw evidence is `results/l1-011-transformers-strength-001.json`.
 The final `run` uses only public position-count metadata: compiled at <=8192
 positions, eager above that. It is calibrated to this frozen 16-cell grid;
 there is no universal best-route claim. The source is promoted from the probe
-to the top-level baseline entry. This actual dispatcher will receive a fresh
-full original gate and a three-arm timing screen that includes dispatch cost.
+to the top-level baseline entry. The final actual dispatcher passed a fresh
+full original gate (job `bw-036e2d281a44`, 160/160) and a three-arm timing
+screen including dispatch cost (`bw-b772f2322074`). A direct dispatcher versus
+selected-arm forward/reverse pair, with both A/A controls, isolated the
+otherwise systematic three-arm order offsets. The measured dispatcher ratio
+ranged 0.9984–1.0118 with median 1.0024 after a redundant outer no_grad wrapper
+was removed; the necessary no_grad scope remains on both shipped-callable arms.
+Source/report hashes and terminal receipts are indexed by the baseline inventory.
 Neither compilation nor community popularity alone establishes a strong
 performance denominator.

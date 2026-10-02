@@ -22,10 +22,10 @@ model or plugin performance comparison.
 | Task | Community path considered | Current classification | Evidence or missing gate |
 | --- | --- | --- | --- |
 | L1/069 residual RMSNorm | vLLM `fused_add_rms_norm` AITER implementation | **Full device correctness qualified** | `l1_069_vllm_aiter_fused.py` passed the original 16 workloads × 10 rounds, 160/160, on gfx938 through this repository's standalone runner. The alternative `vllm_c` path was rejected in the separate Ralph experiment: in-place ABI and a GPU no-op. No new paired latency was measured in this branch. |
-| L1/011 Llama3 RoPE cos/sin output | vLLM rotary cache construction and gather | **Adapter only; no strong baseline** | No installed vLLM rotary callable returns the original `(B,S,D,2)` cos/sin ABI; the separate Ralph adapter reconstructs the pattern. Its measured ratio cannot be labeled a win against a direct community implementation. |
+| L1/011 Llama3 RoPE cos/sin output | Transformers 5.16.1 shipped `LlamaRotaryEmbedding`, eager / Inductor | **Full device correctness qualified; community arms screened** | `l1_011_transformers_rope.py` binds the original supplied frequency buffer to the shipped forward, then stacks its outputs. Both arms passed 160/160; the actual public-size dispatcher also passed 160/160. Paired wall timing selected compiled for 13 original cells and eager for the three larger cells, with dispatch cost included. This replaces the earlier handwritten vLLM cache reconstruction as the community denominator; it is not a global fastest-RoPE claim. |
 | L1/048 dual GEMM + GELU-tanh gate | FlagGems `gelu_tanh_and_mul` after two original projections | **Full device correctness qualified** | `l1_048_flaggems_gelu.py` passed the original 16 workloads × 10 rounds on HCU1, 160/160, max_abs `0.0625`. Its FlagGems component is community fused; the whole adapter retains two framework GEMMs and has no paired performance qualification. The installed vLLM CustomOp route was rejected: its serving config was absent and `_C.gelu_tanh_and_mul` unregistered. Actual reference uses GELU-tanh, not title's SwiGLU. |
 | L1/058 stable expert bucketing | FlagGems stable `argsort` + `bincount` + `cumsum` | **Timed out; no baseline** | Source hashes/import passed, but the first original smoke made no completed case within 600 s; the container remained running on HCU0 after the old host-only timeout. No correctness result or speed denominator exists. The later in-container timeout fix was validated on HCU1. VLLM MoE alignment has padded/block outputs and does not by itself provide the required exact stable permutation plus 257 offsets. |
-| L1/001 GQA attention backward | FlashAttention or training-attention backward | No exact callable identified | This task starts from already-materialized softmax weights and dropout mask and returns two specific gradients. vLLM is an inference stack; a q/k/v attention-backward call is not this ABI. |
+| L1/001 GQA attention backward | PyTorch 2.11 ATen native dropout / softmax backward and vendor GEMMs | **Full device correctness qualified; optimized community primitive composition** | `l1_001_aten_training_backward.py` uses shipped training backward operators on the supplied weights/mask, plus original GQA layouts/reduction. It passed 160/160 on HCU2 with a completed/released terminal receipt. This is a composition of optimized community primitives, not a whole vLLM backward callable; no speedup has been measured for a candidate against it. |
 | L2/035 ConvNeXtV2 + GRN | timm 1.0.28 `ConvNeXtBlock(use_grn=True)` | **Full device correctness qualified** | `l2_035_timm_convnextv2.py` binds supplied weights through `torch.func.functional_call`. The original 16 workloads × 10 rounds passed 160/160 on gfx938, max_abs `1.86e-5`; this is a community block baseline for correctness, with no paired performance result yet. |
 | L2/018 ragged vision attention | FlashAttention varlen attention as one component | **Rejected at original smoke** | A bounded adapter retained original projections/RoPE and called the installed varlen kernel. First original workload failed the upstream numeric gate (max_abs `0.00305` versus atol `0.00031`); BF16 softmax-probability rounding differs from the reference. |
 | L2/024 256-expert MoE | vLLM `fused_experts` | **Runtime fault; not qualified** | A bounded adapter packed the original gate/up weights and invoked the installed fused kernel. The first original smoke hit an HCU memory-aperture VMFault and exited 139 before any comparison. The container ended and HCU VRAM later returned to 0%; do not repeat this route without a separately justified diagnosis. |
@@ -43,6 +43,39 @@ its terminal receipt is
 The result is correctness-only; AITER JIT startup is not a measured speed
 comparison, and the separate Ralph campaign's AITER-relative timing has a
 different candidate/source binding.
+
+The new L1/011 denominator is bound to source SHA-256
+`8650dc499db88b902b75c5d2a17414ed39e2efb56dc6e1400ec7bb567deb498d`.
+Its actual `run` full gate is job `bw-036e2d281a44`, report
+`results/l1-011-transformers-public-full-002.json` (SHA-256
+`eea24fed2eab1746829f4f5d8daab9b186d806c65b7abf27f44e6b3186eb23d2`),
+terminal `results/l1-011-transformers-public-full-admission-002-terminal.json`
+(SHA-256 `6584be3c7563f30c2bbea4b9f62ebafe178e974adb1d29a43e00a0ec470eb047`).
+The final community-arm/dispatcher timing is job `bw-b772f2322074`, report
+`results/l1-011-transformers-public-strength-003.json` (SHA-256
+`a0c9af24b2699cb4cc900dd57d992e44e3ee851f19a74cc3a6b7506bc1d6d4e5`).
+Original inputs, forward/reverse order and A/A controls were retained;
+the direct dispatcher/selected-arm ratio ranged 0.9984–1.0118, median 1.0024.
+These receipts live in node4's isolated
+`experiments/bw1100-bench-baseline-qualification-20261002/`, not in Git.
+See [RoPE qualification](../docs/ROPE-COMMUNITY-QUALIFICATION-2026-10-02.md)
+for source/API binding, compiler failure history and selection scope. The
+historical three-task Ralph RoPE ratio retains its old adapter denominator;
+it is not silently converted into a Transformers-relative gain.
+
+The L1/001 composition is bound to source SHA-256
+`51a9006618dab0f1a90ea306b4bdcfa6b135e524b4d172d3b48852b7e023de34`
+and job `bw-0d7d3de305b8`. In the same qualification worktree, full report
+`results/l1-001-aten-full-002.json` has SHA-256
+`c5155ac4d0140a0e03a0044c69fb80a4ba0ed21d4cadace099920678dee6d90d`;
+terminal `results/l1-001-aten-full-admission-002-terminal.json` has SHA-256
+`ab7530e6d90d32f770712bfefce678673b55f6cc9e58fc338ec82be6847114c0`.
+The prior full numerical pass (`bw-02e8482a8963`) remained not-qualified
+because the one-second post-exit sample still showed 32% VRAM. The new bounded
+release observation recorded 32% -> 7% -> 0% in 2.78 seconds, with no KFD
+process or live owned container, before issuing `completed`. This did not
+change a numeric tolerance or reclassify the historical terminal receipt.
+See [native backward qualification](../docs/ATEN-GQA-BACKWARD-QUALIFICATION-2026-10-02.md).
 
 The L1/048 qualification is bound to source SHA-256
 `637a1479ff71bad1d312c6da5d6ca51452298f99d27b89b7c7f5a9325d3eabd8`

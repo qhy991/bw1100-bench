@@ -105,8 +105,8 @@ DTK 镜像及临时 `docker run --rm`；GPU 模式以新 JSON 收据记录本任
 # CPU 审计，不申请 HCU
 bash scripts/dtk.sh cpu IMAGE python3 bwbench.py audit --output .local/container-audit.json
 
-# 仅在实时确认 HCU0 空闲后，执行一项有界正确性检查
-HIP_VISIBLE_DEVICES=0 BWBENCH_TIMEOUT=180 \
+# 仅在实时确认 HCU1 空闲后，执行一项有界正确性检查
+HIP_VISIBLE_DEVICES=1 BWBENCH_TIMEOUT=180 \
   bash scripts/dtk.sh gpu IMAGE results/rmsnorm-admission.json \
   python3 bwbench.py check --task L1/069_rms_norm --device cuda:0 \
   --candidate /work/examples/l1_069_torch_baseline.py \

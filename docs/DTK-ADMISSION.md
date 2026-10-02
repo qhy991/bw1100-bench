@@ -27,7 +27,11 @@ container's passwd file.
 The output path is create-only. The initial `<name>.json` records admission,
 source command, image, device and deadline; `<name>-terminal.json` records exit
 code, container presence and post-run HCU/KFD observations. `completed` is
-issued only for a zero exit and an observed released device. A missing terminal
+issued only for a zero exit and an observed released device. After a zero exit
+with the owned container gone, the runner observes release for a bounded
+30-second window; large HCU allocations can outlive the first post-exit sample.
+`release_observations` retains each sample. It never signals a process or
+forces a release, and persistent occupancy remains not-qualified. A missing terminal
 or disconnected SSH is **unknown**, not a pass or an idle declaration: inspect
 the exact container, HCU and artifacts before any resubmission.
 
