@@ -1,0 +1,8 @@
+logs/
+results/
+intake.json
+profile-intake.json
+deadline.json
+DONE.json
+exit-code
+__pycache__/

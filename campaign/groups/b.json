@@ -1,0 +1,16 @@
+{
+  "group": "b",
+  "hcu": 2,
+  "budget_hours": 3,
+  "final_minutes": 15,
+  "base_commit": "77a2848f95bd2a13fea0ce69dcc1147ccac39a93",
+  "tasks": [
+    {
+      "id": "L1/001_attention_softmax_dropout_value_matmul_backward",
+      "minutes": 165,
+      "baseline": "baselines/l1_001_aten_training_backward.py",
+      "baseline_sha256": "51a9006618dab0f1a90ea306b4bdcfa6b135e524b4d172d3b48852b7e023de34",
+      "smoke_uuid": "d0ad1a89-e905-51d0-acb2-a746b3fb6a6b"
+    }
+  ]
+}

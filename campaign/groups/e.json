@@ -1,0 +1,16 @@
+{
+  "group": "e",
+  "hcu": 5,
+  "budget_hours": 3,
+  "final_minutes": 15,
+  "base_commit": "77a2848f95bd2a13fea0ce69dcc1147ccac39a93",
+  "tasks": [
+    {
+      "id": "L2/024_moe_expert_parallel_execution",
+      "minutes": 165,
+      "baseline": "baselines/l2_024_flaggems_fp32_moe.py",
+      "baseline_sha256": "c6ed51d3a30f75f414df99cab8d6b6bda35c745d2007674bfb357ba833ed738d",
+      "smoke_uuid": "b1b5c374-9733-5e46-afa1-6768145091be"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "group": "d",
+  "hcu": 4,
+  "budget_hours": 3,
+  "final_minutes": 15,
+  "base_commit": "77a2848f95bd2a13fea0ce69dcc1147ccac39a93",
+  "tasks": [
+    {
+      "id": "L2/018_cu_seqlens_variable_length_vision_attention",
+      "minutes": 165,
+      "baseline": "baselines/l2_018_flaggems_materialized.py",
+      "baseline_sha256": "3f9b77348a85a98a5b9489343900ba9b9766668ecd1cf0915985fe3d422795e6",
+      "smoke_uuid": "6199650f-5543-50c2-b8f1-d52c3c06b269"
+    }
+  ]
+}
