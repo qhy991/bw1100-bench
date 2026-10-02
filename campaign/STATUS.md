@@ -1,3 +1,3 @@
-# Wave 2
+# Cake Compiler engineering control
 
-Prepared; not yet started. Read campaign/intake.json for the assigned group.
+Prepared; intake and group plan own the assigned arm and task.

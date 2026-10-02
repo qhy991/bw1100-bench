@@ -1,16 +1,20 @@
 {
   "group": "d",
   "hcu": 4,
+  "arm": "direct_triton",
   "budget_hours": 3,
   "final_minutes": 15,
   "base_commit": "77a2848f95bd2a13fea0ce69dcc1147ccac39a93",
+  "compiler_commit": "f09a3e859859e848f33a21b63412a306eea8738f",
+  "claim_scope": "engineering_feasibility_only",
+  "reference_access": "known_kernel_reproduction",
   "tasks": [
     {
-      "id": "L2/018_cu_seqlens_variable_length_vision_attention",
+      "id": "L1/048_fused_gate_up_projection_with_swiglu",
       "minutes": 165,
-      "baseline": "baselines/l2_018_flaggems_materialized.py",
-      "baseline_sha256": "3f9b77348a85a98a5b9489343900ba9b9766668ecd1cf0915985fe3d422795e6",
-      "smoke_uuid": "6199650f-5543-50c2-b8f1-d52c3c06b269"
+      "baseline": "baselines/l1_048_flaggems_gelu.py",
+      "baseline_sha256": "637a1479ff71bad1d312c6da5d6ca51452298f99d27b89b7c7f5a9325d3eabd8",
+      "smoke_uuid": "2f5ec70e-5498-5516-bf3f-20159665dcc8"
     }
   ]
 }

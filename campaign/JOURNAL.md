@@ -1,3 +1,3 @@
-# Experiment journal
+# Journal
 
-Owner prepared contracts and launch controls. Ralph owns all optimization candidates.
+Owner prepared the matched engineering task and common evaluation. Ralph owns all candidate optimizations.

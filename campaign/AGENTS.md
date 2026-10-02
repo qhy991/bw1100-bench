@@ -1,10 +1,9 @@
-# Experiment ownership
+# Authoring ownership
 
-Ralph implements all optimization candidates under campaign/candidates and harnesses under campaign/tools.
-The owner prepared this contract and launch controls. Do not modify baselines,
-suite/source locks, references, skills, admission, completion/flow/launch controls,
-group plans or deadlines. Community-source requirements apply to the frozen
-denominator. Candidates may contain custom Triton, HIP, C++ and GEMM kernels.
-Preserve historical artifacts. Raw results, logs and dataset stay ignored.
-Only this group's assigned HCU may be used, through campaign/admit.sh.
-
+Ralph owns optimization candidates and Schedule authoring. Owner prepared the
+matched contract, common wall timer, Compiler adapter and launch/completion tools.
+Do not modify the latter, baselines, original suite/source locks/reference,
+group plans/deadlines, installed skills or the pinned .deps/cake-ir checkout.
+Follow the assigned direct_triton or cake_ir surface in TASK.md. Shared community
+library calls are allowed in both arms, with coverage recorded. No previous custom
+winner or other arm's artifact may be read. Preserve all historical receipts.

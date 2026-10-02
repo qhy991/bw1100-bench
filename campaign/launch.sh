@@ -23,6 +23,7 @@ PY
 profile_instruction=$(python3 scripts/ralph_profile_intake.py campaign/profile-intake.json)
 mkdir -p campaign/logs campaign/results campaign/candidates campaign/tools .local/aiter-jit-cache .local/triton-cache
 bash scripts/dtk.sh cpu "$image" /usr/bin/timeout -k 10s 180s python3 bwbench.py audit --output campaign/results/intake-audit.json
+bash scripts/dtk.sh cpu "$image" /usr/bin/timeout -k 10s 180s python3 campaign/compiler_preflight.py
 python3 campaign/prepare.py "$group"
 test ! -e campaign/logs/ralph.log
 test ! -e campaign/exit-code
@@ -33,4 +34,3 @@ code=$?
 set -e
 printf '%s\n' "$code" > campaign/exit-code
 exit "$code"
-

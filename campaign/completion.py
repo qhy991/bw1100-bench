@@ -82,6 +82,25 @@ def completed(root):
         intake = load(root, 'campaign/intake.json')
         plan = load(root, intake['plan'])
         validate(root, json.loads(marker.read_text()), plan)
+        if plan.get('arm') == 'cake_ir':
+            artifacts = []
+            for row in json.loads(marker.read_text())['tasks']:
+                if row['status'] != 'accepted':
+                    continue
+                if not row.get('cake_artifacts'):
+                    raise ValueError('Cake outcome needs executed Compiler artifact receipts')
+                for name in row['cake_artifacts']:
+                    inside(root, name)
+                    artifacts.append(name)
+            if artifacts:
+                child = subprocess.run(
+                    ['bash', 'scripts/dtk.sh', 'cpu', intake['image'],
+                     '/usr/bin/timeout', '-k', '10s', '180s',
+                     'python3', 'campaign/cake_bridge.py', 'verify-many'] + sorted(set(artifacts)),
+                    cwd=str(root), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    universal_newlines=True, timeout=200)
+                if child.returncode:
+                    raise ValueError('Compiler emission replay failed: ' + child.stderr[-300:])
         for folder in ('campaign/results', '.local/profile'):
             for path in (root / folder).rglob('*.json'):
                 doc = json.loads(path.read_text())

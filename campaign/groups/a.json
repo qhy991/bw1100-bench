@@ -1,23 +1,20 @@
 {
   "group": "a",
   "hcu": 1,
+  "arm": "direct_triton",
   "budget_hours": 3,
   "final_minutes": 15,
   "base_commit": "77a2848f95bd2a13fea0ce69dcc1147ccac39a93",
+  "compiler_commit": "f09a3e859859e848f33a21b63412a306eea8738f",
+  "claim_scope": "engineering_feasibility_only",
+  "reference_access": "known_kernel_reproduction",
   "tasks": [
     {
-      "id": "L1/058_moe_expert_token_radix_sort_with_prefix_sum",
-      "minutes": 75,
-      "baseline": "baselines/l1_058_aten_stable_search.py",
-      "baseline_sha256": "7b6e9df497aba93778b88a5019ceee5dd45102b52a9ea06b354138dd69f859b6",
-      "smoke_uuid": "e259b448-b73a-5efa-81c4-f0c9e1531e3e"
-    },
-    {
-      "id": "L1/011_rotary_position_embedding",
-      "minutes": 90,
-      "baseline": "baselines/l1_011_transformers_rope.py",
-      "baseline_sha256": "8650dc499db88b902b75c5d2a17414ed39e2efb56dc6e1400ec7bb567deb498d",
-      "smoke_uuid": "89aa51a1-f82a-5ca5-9772-0a697105778d"
+      "id": "L1/069_rms_norm",
+      "minutes": 165,
+      "baseline": "baselines/l1_069_vllm_aiter_fused.py",
+      "baseline_sha256": "1430ad1e28a40be334b795de13083caa537a03049d92b5148530b2bee63c7b60",
+      "smoke_uuid": "b6b63196-7f11-5b0d-969e-33e44f70975f"
     }
   ]
 }
