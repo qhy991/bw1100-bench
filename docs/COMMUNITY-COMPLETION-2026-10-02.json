@@ -1,0 +1,93 @@
+{
+  "schema": "bw1100-bench.community-completion.v1",
+  "sources": {
+    "sol_execbench": {
+      "url": "https://github.com/NVIDIA/SOL-ExecBench.git",
+      "revision": "a9fa0804c793d438e70850c33fe34426e66d53dd"
+    },
+    "dataset": {
+      "id": "nvidia/SOL-ExecBench",
+      "revision": "63699402f003496acc3af4eb534a5304a8ac1ea9",
+      "license_url": "https://huggingface.co/datasets/nvidia/SOL-ExecBench/blob/63699402f003496acc3af4eb534a5304a8ac1ea9/LICENSE"
+    }
+  },
+  "image_id": "sha256:3ad0ae7192b8f9bafdf5b48fc414f8785f3c2463005e6b25290b7f75146ff260",
+  "evidence_root": "experiments/bw1100-bench-last-two-20261002",
+  "entries": [
+    {
+      "task": "L1/058_moe_expert_token_radix_sort_with_prefix_sum",
+      "source": "baselines/l1_058_aten_stable_search.py",
+      "source_sha256": "7b6e9df497aba93778b88a5019ceee5dd45102b52a9ea06b354138dd69f859b6",
+      "symbol": "run",
+      "workloads": 16,
+      "rounds": 10,
+      "passed_cases": 160,
+      "job_id": "bw-36dd0ee4c6fd",
+      "report": "results/l1-058-native-search-full-002.json",
+      "report_sha256": "149687575c0ff5ceb9d44c76cf7b3e38563e7ec752aa24caa4607637d114d5ac",
+      "terminal": "results/l1-058-native-search-full-admission-002-terminal.json",
+      "terminal_sha256": "995034404557a2fb60bb2d7565baf01f7abb329b0fcf0ff3429539ee0d8b2ea3",
+      "terminal_status": "completed"
+    },
+    {
+      "task": "L2/060_chunk_gated_delta_rule_linear_attention",
+      "source": "baselines/l2_060_fla_fp32_mixed.py",
+      "source_sha256": "d441af52c4a1d07c28ad5ced67701e933059e1892eddd7c475aa795f73ecf5a5",
+      "symbol": "run",
+      "workloads": 16,
+      "rounds": 10,
+      "passed_cases": 160,
+      "job_id": "bw-3aeba0c00011",
+      "report": "results/l2-060-fla-fp32-full-001.json",
+      "report_sha256": "ba5c2f3b6d0b6f42ecec2a1fc74992a8b3e785cd5837a0377d10dc72103446c0",
+      "terminal": "results/l2-060-fla-fp32-full-admission-001-terminal.json",
+      "terminal_sha256": "09424c6b9100f721842b79fd49515a898bc4392d501d2488bf2e4f8f5f264c2b",
+      "terminal_status": "completed"
+    },
+    {
+      "task": "L2/018_cu_seqlens_variable_length_vision_attention",
+      "source": "baselines/l2_018_flaggems_materialized.py",
+      "source_sha256": "3f9b77348a85a98a5b9489343900ba9b9766668ecd1cf0915985fe3d422795e6",
+      "symbol": "run",
+      "workloads": 16,
+      "rounds": 10,
+      "passed_cases": 160,
+      "job_id": "bw-b5c3a7ddc1da",
+      "report": "results/l2-018-promoted-full-001.json",
+      "report_sha256": "1be43500c34d74987ffcffac9f28156b0dfd5a86fb3c3eb5483eae27c109a98a",
+      "terminal": "results/l2-018-promoted-full-admission-001-terminal.json",
+      "terminal_sha256": "78462fc6600ab9f5e1d0b69c5d1b541441b3813bc48374350002e14950f3e0d8",
+      "terminal_status": "completed"
+    },
+    {
+      "task": "L2/024_moe_expert_parallel_execution",
+      "source": "baselines/l2_024_flaggems_fp32_moe.py",
+      "source_sha256": "c6ed51d3a30f75f414df99cab8d6b6bda35c745d2007674bfb357ba833ed738d",
+      "symbol": "run",
+      "workloads": 16,
+      "rounds": 10,
+      "passed_cases": 160,
+      "job_id": "bw-cfbbded6d561",
+      "report": "results/l2-024-promoted-full-001.json",
+      "report_sha256": "b748c5bd5757eb92373f414e52f861386a0bad0fbcf3ca0b59a2df99bb1ace05",
+      "terminal": "results/l2-024-promoted-full-admission-001-terminal.json",
+      "terminal_sha256": "d11aaf27ed4c2d5b2a8307479a42da460d703bd1a5ebe80bc073607ce053584b",
+      "terminal_status": "completed"
+    },
+    {
+      "task": "L2/056_language_model_decoder_prenorm_attention_ffn_residual_backward",
+      "source": "baselines/l2_056_aten_decoder_backward.py",
+      "source_sha256": "7af2d03e361cab0144c156907a882a8aeffaac739ccb22fd2b24974fb2e08236",
+      "symbol": "run",
+      "workloads": 16,
+      "rounds": 10,
+      "passed_cases": 160,
+      "job_id": "bw-705972c158e1",
+      "report": "results/l2-056-promoted-full-001.json",
+      "report_sha256": "0ce61b8b675882fd9684c8d5368cecc40dd85805cdef9dca5f5d3a4ea8fc49c8",
+      "terminal": "results/l2-056-promoted-full-admission-001-terminal.json",
+      "terminal_sha256": "12ca943a8082a79565af3c6fcb533c18029a0cb8c34076ea766edb664fce2d18",
+      "terminal_status": "completed"
+    }
+  ]
+}

@@ -10,6 +10,22 @@ per task; only an exact-ABI gfx938 full gate can qualify a candidate baseline.
 Latency additionally needs the same original generated inputs, source hashes,
 absolute times, paired forward/reverse order, and A/A drift controls.
 
+All ten entries now have a full original-workload gfx938 qualification. The
+table distinguishes shipped whole callables from compositions of optimized
+community primitives; qualification is not universal performance optimality.
+Final top-level entries L2/018, L2/024 and L2/056 were re-qualified after
+moving them from the Ralph campaign (import-root paths had changed).
+The final five-entry source and report binding is in
+[the completion manifest](../docs/COMMUNITY-COMPLETION-2026-10-02.json).
+The new last-two route and the withdrawn earlier FLA diagnosis are explained
+in [last-two qualification](../docs/LAST-TWO-COMMUNITY-BASELINES-2026-10-02.md).
+
+L2/060 requires these **per-command** settings before import/compilation:
+`TRITON_F32_DEFAULT=ieee FLA_TRIL_PRECISION=ieee`, with a persistent writable
+`TRITON_CACHE_DIR`. Keep them identical in correctness, profiling and timing;
+do not silently use a different precision path. No installed library source
+or host-wide environment setting was modified to qualify it.
+
 The working node4 image is the existing DTK vLLM 0.29.0 image with immutable ID
 `sha256:3ad0ae7192b8f9bafdf5b48fc414f8785f3c2463005e6b25290b7f75146ff260`.
 It includes AITER 0.1.5, FlashAttention 2.8.3, and timm 1.0.28. The FlagOS
@@ -24,13 +40,13 @@ model or plugin performance comparison.
 | L1/069 residual RMSNorm | vLLM `fused_add_rms_norm` AITER implementation | **Full device correctness qualified** | `l1_069_vllm_aiter_fused.py` passed the original 16 workloads × 10 rounds, 160/160, on gfx938 through this repository's standalone runner. The alternative `vllm_c` path was rejected in the separate Ralph experiment: in-place ABI and a GPU no-op. No new paired latency was measured in this branch. |
 | L1/011 Llama3 RoPE cos/sin output | Transformers 5.16.1 shipped `LlamaRotaryEmbedding`, eager / Inductor | **Full device correctness qualified; community arms screened** | `l1_011_transformers_rope.py` binds the original supplied frequency buffer to the shipped forward, then stacks its outputs. Both arms passed 160/160; the actual public-size dispatcher also passed 160/160. Paired wall timing selected compiled for 13 original cells and eager for the three larger cells, with dispatch cost included. This replaces the earlier handwritten vLLM cache reconstruction as the community denominator; it is not a global fastest-RoPE claim. |
 | L1/048 dual GEMM + GELU-tanh gate | FlagGems `gelu_tanh_and_mul` after two original projections | **Full device correctness qualified** | `l1_048_flaggems_gelu.py` passed the original 16 workloads × 10 rounds on HCU1, 160/160, max_abs `0.0625`. Its FlagGems component is community fused; the whole adapter retains two framework GEMMs and has no paired performance qualification. The installed vLLM CustomOp route was rejected: its serving config was absent and `_C.gelu_tanh_and_mul` unregistered. Actual reference uses GELU-tanh, not title's SwiGLU. |
-| L1/058 stable expert bucketing | FlagGems stable `argsort` + `bincount` + `cumsum` | **Timed out; no baseline** | Source hashes/import passed, but the first original smoke made no completed case within 600 s; the container remained running on HCU0 after the old host-only timeout. No correctness result or speed denominator exists. The later in-container timeout fix was validated on HCU1. VLLM MoE alignment has padded/block outputs and does not by itself provide the required exact stable permutation plus 257 offsets. |
+| L1/058 stable expert bucketing | PyTorch 2.11 HIP stable sort + native `searchsorted` | **Full device correctness qualified; native-library strength screened** | `l1_058_aten_stable_search.py` uses the sorted expert values to compute 257 exact lower bounds, preserving the exact stable int32 permutation and offsets. Final source passed 160/160. Against an independently qualified native histogram/prefix-sum library composition, search was faster in all 16 cells in both orders, 2.07–2.37x with A/A controls. The quarantined FlagGems argsort route was not reused. |
 | L1/001 GQA attention backward | PyTorch 2.11 ATen native dropout / softmax backward and vendor GEMMs | **Full device correctness qualified; optimized community primitive composition** | `l1_001_aten_training_backward.py` uses shipped training backward operators on the supplied weights/mask, plus original GQA layouts/reduction. It passed 160/160 on HCU2 with a completed/released terminal receipt. This is a composition of optimized community primitives, not a whole vLLM backward callable; no speedup has been measured for a candidate against it. |
 | L2/035 ConvNeXtV2 + GRN | timm 1.0.28 `ConvNeXtBlock(use_grn=True)` | **Full device correctness qualified** | `l2_035_timm_convnextv2.py` binds supplied weights through `torch.func.functional_call`. The original 16 workloads × 10 rounds passed 160/160 on gfx938, max_abs `1.86e-5`; this is a community block baseline for correctness, with no paired performance result yet. |
-| L2/018 ragged vision attention | FlashAttention varlen attention as one component | **Rejected at original smoke** | A bounded adapter retained original projections/RoPE and called the installed varlen kernel. First original workload failed the upstream numeric gate (max_abs `0.00305` versus atol `0.00031`); BF16 softmax-probability rounding differs from the reference. |
-| L2/024 256-expert MoE | vLLM `fused_experts` | **Runtime fault; not qualified** | A bounded adapter packed the original gate/up weights and invoked the installed fused kernel. The first original smoke hit an HCU memory-aperture VMFault and exited 139 before any comparison. The container ended and HCU VRAM later returned to 0%; do not repeat this route without a separately justified diagnosis. |
-| L2/060 chunk gated delta rule | Bundled FLA `chunk_gated_delta_rule` | **Rejected for this task** | Separate Ralph experiment failed the first original smoke workload (max_abs ≈9.738): the reference and FLA use different inter-chunk gate conventions. A reference-semantics candidate passed correctness, but there is no qualifying community speed baseline. |
-| L2/056 complete decoder backward | Training-model community backward components | No exact callable identified | Original ABI returns ten gradients with a particular intermediate/rounding chain. vLLM inference has no corresponding whole backward callable. |
+| L2/018 ragged vision attention | FlagGems materialized `bmm` + FP32 `softmax` composition | **Full device correctness qualified; community primitive composition** | `l2_018_flaggems_materialized.py` composes the shipped FlagGems 5.4.0dev Hygon Triton primitives with the reference's exact BF16 rounding points: the scaled score matrix is a BF16 `bmm` output (rounded before softmax) and FP32 softmax probabilities are rounded to BF16 before the BF16 PV `bmm`. The FlashAttention varlen arm was rejected because its FP32 online-softmax scores skip the first rounding (CPU probe max_abs 3.9e-3 vs smoke atol 3.1e-4; GPU smoke 3.05e-3). Passed the original 16 workloads × 10 rounds, 160/160 on HCU2 job `bw-76878b9d2628`, terminal completed/released. |
+| L2/024 256-expert MoE | FlagGems FP32 grouped-GEMM composition | **Full device correctness qualified; community primitive composition** | `l2_024_flaggems_fp32_moe.py` keeps the original FP32 dispatch/SwiGLU/combine semantics and replaces the three per-expert GEMMs with the shipped FlagGems 5.4.0dev Hygon Triton `bmm` (true FP32 `tl.dot`). A CPU probe (`campaign/tools/l2_024_cpu_numeric_probe.py`) shows even an ideal BF16 fused kernel fails (matched 0.96946 < 0.98, max_abs 1.56e-2 vs atol 5.1e-4), so shipped BF16 fused MoE routes (vLLM `fused_experts`, AITER `fused_moe`, whose earlier attempt also VMFaulted) cannot meet the reference semantics. Passed 16 workloads × 10 rounds, 160/160 on HCU2 job `bw-4f5ca3ad565e`, terminal completed/released; max_abs 0.015625 is one BF16 ulp at the final rounding boundary within the effective upstream matched-ratio gate. |
+| L2/060 chunk gated delta rule | Unchanged vLLM-bundled FLA component kernels, FP32 mixed-gate composition | **Full device correctness qualified; community component composition** | `l2_060_fla_fp32_mixed.py` retains cyclic heads, original zero padding and FP32 intermediates, routes gates per site, and uses IEEE dot precision. The unchanged state JIT body is launched at BV=32/warps=4/stages=1 to fit the 64 KiB LDS limit. Passed 160/160 and completed/released. Four actual state-kernel dispatches were validated by rocprof on the original smoke. This supersedes the old adapter-level device-negative diagnosis; the fused single-gate entry still has different semantics. |
+| L2/056 complete decoder backward | PyTorch 2.11 ATen native training backward operators + vendor GEMMs | **Full device correctness qualified; community primitive composition** | `l2_056_aten_decoder_backward.py` binds the ten original gradient outputs and the original layouts/reduction chain, replacing the manual softmax gradient with `aten._softmax_backward_data` (FP32 operands, reference rounding point) and the manual SiLU derivative with `aten.silu_backward`, following the qualified L1/001 composition precedent. vLLM inference has no corresponding whole backward callable. Passed 16 workloads × 10 rounds, 160/160 on HCU2 job `bw-9105f0750a04`, terminal completed/released. |
 
 The L1/069 qualification is bound to source SHA-256
 `1430ad1e28a40be334b795de13083caa537a03049d92b5148530b2bee63c7b60`
@@ -97,6 +113,60 @@ It was exported from node2 FlagRelease image
 Run `python3 scripts/prepare_flag_gems.py --archive PATH` before using this
 adapter in another checkout. The script verifies both the archive and the
 materialized source; neither is committed.
+
+The L2/018 qualification is bound to source SHA-256
+`14052f456d5ef6d1d2df887731eedd16fb8d2817d95c6fdcfa405a62d1a4802e`
+(`campaign/baselines/l2_018_flaggems_materialized.py`; the promoted copy in
+this directory differs only in its repo-root path resolution). The ignored
+raw full report is `campaign/results/l2-018-flaggems-full-001.json`
+(SHA-256 `1fa6a5755ec650ec2cffe4f71642255b28a4cc2999fab6e2e9927c1b05e31213`,
+160/160 cases, max_abs at most 0.001953125 under the effective upstream
+gates); its terminal receipt is
+`campaign/results/l2-018-flaggems-full-admission-001-terminal.json`
+(SHA-256 `c361acf74f1f254a1d54d4fd28746b2e656057dd5a6ac9bd5c37739be245dd09`,
+job `bw-76878b9d2628`, exit 0, HCU2 VRAM released to 0%). Smoke receipt:
+job `bw-3af6b5fa6d8d` (report
+`campaign/results/l2-018-flaggems-smoke-002.json`, SHA-256
+`bfdad04e9cd2bc02a08da4e4d7d16d16ee0c925584a62c751e2c827b57ff8efc`).
+The CPU divergence probe binding the earliest numeric split is
+`campaign/tools/l2_018_cpu_divergence_probe.py` (SHA-256
+`8c22322b05b859f25b9e54866cf3011fc2c69063ead484f55dd5112d6d1782ec`).
+No speed claim is attached; no rocprof diagnostic was collected because
+this phase claims no GPU bottleneck or strength mechanism for the entry
+(`not_decision_relevant`).
+
+The L2/024 qualification is bound to source SHA-256
+`e7d6631a032f1c0feabaf3832eec655ae8dc996d29f44a7de37546f01aa16294`
+(`campaign/baselines/l2_024_flaggems_fp32_moe.py`; the promoted copy in this
+directory differs only in its repo-root path resolution). Full report
+`campaign/results/l2-024-flaggems-full-001.json` (SHA-256
+`aa4406c3733b70eb8e54cbcce1b4aeb00e2c6812542e94c939a25fd83ec1cf89`, 160/160)
+and terminal `campaign/results/l2-024-flaggems-full-admission-001-terminal.json`
+(SHA-256 `7fd8579664da77d1a9b3037175653ae8f2133a827f2bed889bbc401ad082ebc2`,
+job `bw-4f5ca3ad565e`, exit 0, HCU2 VRAM 0%). Smoke: job `bw-98b97d73f242`
+(report `campaign/results/l2-024-flaggems-smoke-001.json`, SHA-256
+`da7f5f86f269e78898778080594fed66fa6370645f5e00bb047e263318550bf6`).
+The BF16-fused infeasibility probe is
+`campaign/tools/l2_024_cpu_numeric_probe.py` (SHA-256
+`17d7dc2fe180211e8c80030def8d323c5273c928433792578586e1bea84f6bb7`).
+No speed claim; rocprof is `not_decision_relevant` for this
+correctness-only qualification.
+
+The L2/056 qualification is bound to source SHA-256
+`7af2d03e361cab0144c156907a882a8aeffaac739ccb22fd2b24974fb2e08236`
+(identical file promoted to this directory; it has no path-relative
+dependency). Full report `campaign/results/l2-056-aten-full-001.json`
+(SHA-256 `6026cf8d66bdba6b564e9e3305ab6d4b89640d958f122eac89125d3d1657d6e5`,
+160/160) and terminal
+`campaign/results/l2-056-aten-full-admission-001-terminal.json` (SHA-256
+`e0c0f8d6386baf1eac027d7ee8a606c82f748fec88de4427e46cb10e481056f8`, job
+`bw-9105f0750a04`, exit 0, HCU2 VRAM 0%). Smoke: job `bw-c3ae129dcb0c`
+(report `campaign/results/l2-056-aten-smoke-001.json`, SHA-256
+`34c1c262db3b75c09c23de0b022d3f0a995d3aa41c99d1abbc39e9af181bb7a7`).
+A CPU sanity run (`campaign/results/l2-056-aten-cpu-sanity-001.json`) was
+started but CPU BLAS was too slow for the bounded phase; the container
+exits on its own without holding any HCU. No speed claim; rocprof is
+`not_decision_relevant` for this correctness-only qualification.
 
 The L2/035 qualification is bound to source SHA-256
 `2cfe9f33fee5b7ac3bdbdcc31834bdb7101e78cc726a1eac71a7ab9b05b44d2c`
