@@ -15,7 +15,7 @@ PIN = 'f09a3e859859e848f33a21b63412a306eea8738f'
 def compiler():
     sys.path.insert(0, str(CAKE / 'src'))
     from open_cake_ir.compiler import Compiler
-    result = Compiler.load(CAKE, 'compiler/revision.json')
+    result = Compiler.load(CAKE, CAKE / 'compiler/revision.json')
     if result.commit != PIN:
         raise ValueError('Cake Compiler needs its clean pinned checkout')
     return result
