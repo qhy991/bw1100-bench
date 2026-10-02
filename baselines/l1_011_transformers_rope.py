@@ -1,10 +1,11 @@
-"""Pending L1/011 baseline: shipped Transformers RoPE, eager/Inductor arms.
+"""L1/011 community baseline: shipped Transformers RoPE, eager/Inductor arms.
 
 Bind the original supplied inverse-frequency buffer and attention scalar to
 LlamaRotaryEmbedding. Its shipped forward computes cos/sin; the adapter only
-stacks the two outputs into the task ABI. Neither arm is device-qualified
-until the original full gate accepts it. The compiled arm compiles that same
-community callable, not a replacement handwritten formula.
+stacks the two outputs into the task ABI. The compiled arm compiles that same
+community callable. Both arms passed the original full gfx938 gate. The
+public-size dispatcher retains eager for the three larger original cases
+where paired timing found compilation slower; it needs its own full gate.
 """
 
 from functools import lru_cache
@@ -54,7 +55,7 @@ def _compiled(dim, attention_scaling, device):
 
 
 @torch.no_grad()
-def run(position_ids, inv_freq, attention_scaling):
+def run_eager(position_ids, inv_freq, attention_scaling):
     return _callable(inv_freq.numel() * 2, float(attention_scaling),
                      str(inv_freq.device))(position_ids, inv_freq)
 
@@ -63,3 +64,13 @@ def run(position_ids, inv_freq, attention_scaling):
 def run_compiled(position_ids, inv_freq, attention_scaling):
     return _compiled(inv_freq.numel() * 2, float(attention_scaling),
                      str(inv_freq.device))(position_ids, inv_freq)
+
+
+@torch.no_grad()
+def run(position_ids, inv_freq, attention_scaling):
+    # Frozen from the original 16-cell community-arm screen: compiled won at
+    # <=8192 positions, eager won at 14704/16384/34624. Only public shape
+    # metadata is inspected; supplied values/frequencies never select a route.
+    if position_ids.numel() > 8192:
+        return run_eager(position_ids, inv_freq, attention_scaling)
+    return run_compiled(position_ids, inv_freq, attention_scaling)

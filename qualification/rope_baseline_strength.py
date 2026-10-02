@@ -1,4 +1,4 @@
-"""Screen eager/compiled shipped RoPE callables with paired wall latency."""
+"""Screen the public dispatcher and shipped RoPE arms with paired wall latency."""
 
 import argparse
 import hashlib
@@ -30,19 +30,17 @@ def timed(fn, inputs):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, required=True)
-    parser.add_argument('--eager-gate', type=Path, required=True)
-    parser.add_argument('--compiled-gate', type=Path, required=True)
+    parser.add_argument('--gate', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     if args.output.exists():
         raise FileExistsError(args.output)
-    for gate, symbol in ((args.eager_gate, 'run'), (args.compiled_gate, 'run_compiled')):
-        report = json.loads(gate.read_text())
-        if not (report.get('full_device_correctness') and report['status'] == 'passed'
-                and report['task'] == 'L1/011_rotary_position_embedding'
-                and report['candidate']['symbol'] == symbol
-                and Path(report['candidate']['path']).resolve() == args.source.resolve()):
-            raise ValueError('missing full original device gate: ' + str(gate))
+    report = json.loads(args.gate.read_text())
+    if not (report.get('full_device_correctness') and report['status'] == 'passed'
+            and report['task'] == 'L1/011_rotary_position_embedding'
+            and report['candidate']['symbol'] == 'run'
+            and Path(report['candidate']['path']).resolve() == args.source.resolve()):
+        raise ValueError('missing full original device gate: ' + str(args.gate))
     bwbench.upstream()
     task = bwbench.task_record('L1/011_rotary_position_embedding')
     definition, workloads, _, path = bwbench.load_problem(task)
@@ -58,15 +56,18 @@ def main():
         inputs = gen_inputs(definition, workload, 'cuda:0', custom_inputs_fn=custom)
         snapshots = [item.clone() for item in inputs if isinstance(item, torch.Tensor)]
         for _ in range(10):
-            module.run(*inputs)
+            module.run_eager(*inputs)
             module.run_compiled(*inputs)
-        samples = {name: [] for name in ('ef', 'cf', 'cr', 'er', 'a1', 'a2')}
+            module.run(*inputs)
+        samples = {name: [] for name in ('df', 'ef', 'cf', 'cr', 'er', 'dr', 'a1', 'a2')}
         for _ in range(30):
-            samples['ef'].append(timed(module.run, inputs))
+            samples['df'].append(timed(module.run, inputs))
+            samples['ef'].append(timed(module.run_eager, inputs))
             samples['cf'].append(timed(module.run_compiled, inputs))
         for _ in range(30):
             samples['cr'].append(timed(module.run_compiled, inputs))
-            samples['er'].append(timed(module.run, inputs))
+            samples['er'].append(timed(module.run_eager, inputs))
+            samples['dr'].append(timed(module.run, inputs))
         for _ in range(30):
             samples['a1'].append(timed(module.run, inputs))
             samples['a2'].append(timed(module.run, inputs))
@@ -80,16 +81,21 @@ def main():
                'reverse_eager_over_compiled': reverse, 'aa_relative_drift': drift,
                'compiled_win_in_both_directions': unchanged and
                    min(forward, reverse) - 1 > max(drift, 0.01),
+               'public_route': 'eager' if inputs[0].numel() > 8192 else 'compiled',
+               'dispatch_over_selected_forward': med['df'] / (
+                   med['ef'] if inputs[0].numel() > 8192 else med['cf']),
+               'dispatch_over_selected_reverse': med['dr'] / (
+                   med['er'] if inputs[0].numel() > 8192 else med['cr']),
                'inputs_unmutated': unchanged, 'samples_us': samples}
         rows.append(row)
         print(json.dumps({key: value for key, value in row.items()
                           if key != 'samples_us'}), flush=True)
-    result = {'schema': 'bw1100-bench.community-rope-strength.v1',
+    result = {'schema': 'bw1100-bench.community-rope-strength.v2',
               'source_sha256': digest(args.source),
-              'full_gate_sha256': [digest(args.eager_gate), digest(args.compiled_gate)],
+              'full_gate_sha256': digest(args.gate),
               'sources': bwbench.document('sources.lock.json'),
               'mode': 'paired_callable_wall_no_profiler', 'seed': 200,
-              'control': 'eager A/A, forward and reverse order', 'rows': rows}
+              'control': 'dispatcher A/A, forward and reverse three-arm order', 'rows': rows}
     with args.output.open('x') as stream:
         json.dump(result, stream, indent=2)
         stream.write('\n')
