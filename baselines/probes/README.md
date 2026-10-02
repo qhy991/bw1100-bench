@@ -22,3 +22,11 @@ default Dynamo eight-recompile limit during the full original shape grid
 (job `bw-289e4da80113`, exit 1, released HCU2). The next revision uses dynamic
 shape compilation of the same shipped forward; it changes no numeric
 operation or tolerance. Its full gate remains pending.
+
+The dynamic revision passed all 16 original workloads x 10 rounds on HCU2
+(job `bw-0fec3eaa11ef`, 160/160, completed/exit 0). The eager arm also passed
+the full device gate at its first revision (job `bw-1da3b525995a`). Next:
+rebind the current eager source, then screen eager versus compiled with the
+original generated inputs and paired no-profiler wall latency before choosing
+the performance denominator. Do not treat correctness alone as baseline
+strength or assume compilation always makes every shape faster.
