@@ -84,13 +84,24 @@ class HcuRunTests(unittest.TestCase):
                  mock.patch.object(sys, 'argv', argv), \
                  mock.patch.object(hcu_run.subprocess, 'check_output', side_effect=output), \
                  mock.patch.object(hcu_run.subprocess, 'run', side_effect=run), \
-                 mock.patch.object(hcu_run.time, 'sleep'):
+                 mock.patch.object(hcu_run.time, 'sleep'), \
+                 mock.patch.object(hcu_run.time, 'monotonic', side_effect=(0, 31)):
                 self.assertEqual(hcu_run.main(), 75)
             terminal = json.loads((root / 'results/job-terminal.json').read_text())
             self.assertEqual(terminal['status'], 'not_qualified')
             self.assertEqual(terminal['after_vram'], '97%')
             self.assertFalse(terminal['physical_exclusivity'])
             self.assertEqual(terminal['container_timeout_s'], 14)
+
+    def test_success_waits_for_observed_delayed_release(self):
+        with mock.patch.object(hcu_run, '_vram', side_effect=('32%', '0%')), \
+             mock.patch.object(hcu_run, '_kfd_visible', return_value=False), \
+             mock.patch.object(hcu_run.subprocess, 'check_output', return_value=''), \
+             mock.patch.object(hcu_run.time, 'sleep'), \
+             mock.patch.object(hcu_run.time, 'monotonic', side_effect=(0, 1, 2)):
+            vram, kfd, live, observations = hcu_run._observe_release(2, 'owned-job', 0)
+        self.assertEqual((vram, kfd, live), ('0%', False, False))
+        self.assertEqual([row['vram'] for row in observations], ['32%', '0%'])
 
 
 if __name__ == '__main__':

@@ -47,6 +47,22 @@ def _receipt_paths(name):
     return path, terminal
 
 
+def _observe_release(device, job_id, exit_code):
+    started = time.monotonic()
+    observations = []
+    while True:
+        vram, kfd = _vram(device), _kfd_visible()
+        live = bool(subprocess.check_output(
+            ['docker', 'ps', '-q', '--filter', 'name=^/' + job_id + '$'],
+            universal_newlines=True, timeout=15).strip())
+        elapsed = time.monotonic() - started
+        observations.append({'elapsed_s': elapsed, 'vram': vram,
+                             'kfd_visible': kfd, 'container_still_running': live})
+        if (vram == '0%' and not kfd and not live) or exit_code != 0 or live or elapsed >= 30:
+            return vram, kfd, live, observations
+        time.sleep(1)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--image', required=True)
@@ -124,16 +140,14 @@ def main():
         except subprocess.TimeoutExpired:
             exit_code, reason = 124, 'timeout_check_container_state'
         time.sleep(1)
-        after_vram = _vram(args.device)
-        after_kfd = _kfd_visible()
-        container_live = bool(subprocess.check_output(
-            ['docker', 'ps', '-q', '--filter', 'name=^/' + job_id + '$'],
-            universal_newlines=True, timeout=15).strip())
+        after_vram, after_kfd, container_live, release_observations = _observe_release(
+            args.device, job_id, exit_code)
         terminal_doc = dict(admission)
         terminal_doc.update(
             exit_code=exit_code, reason=reason,
             after_vram=after_vram, after_kfd_visible=after_kfd,
             container_still_running=container_live,
+            release_observations=release_observations,
             completed_at=time.time(),
             status=('completed' if exit_code == 0 and after_vram == '0%'
                     and not after_kfd and not container_live else 'not_qualified'),
