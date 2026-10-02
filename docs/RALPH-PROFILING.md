@@ -15,20 +15,25 @@ GPU kernel count/identity if available and use paired callable latency for
 the host-side mechanism. An empty filtered `torch.profiler` list is not a
 diagnostic profile or evidence that rocprof is unavailable.
 
-Do not rely on automatic Claude skill discovery. The launcher must fail early
-unless `$HOME/.agents/skills/dcu-rocprof-report-skill/SKILL.md` is readable,
-and record its SHA-256 in the campaign intake. Put an explicit instruction in
-the first Ralph prompt to **read that exact file** before the first kernel
-change. The `.claude/skills/` symlink is useful for interactive discovery but
-its existence alone does not prove an agent used the skill.
-On node4 the long-lived tmux server once inherited a stale `/home/testuser01`
-HOME; set `HOME=/data3/testuser01` in the launcher before this preflight:
+Do not rely on automatic Claude skill discovery. On node4 the long-lived tmux
+server once inherited a stale `/home/testuser01` HOME; set
+`HOME=/data3/testuser01` in a fresh campaign's launcher. Run the create-only
+intake before invoking Ralph, and prepend its output to the actual first
+prompt (and any repeated round prompt):
 
 ```bash
-skill="$HOME/.agents/skills/dcu-rocprof-report-skill/SKILL.md"
-test -r "$skill" || { echo "DCU profiling skill is missing" >&2; exit 2; }
-sha256sum "$skill"  # retain the path and hash in campaign intake
+export HOME=/data3/testuser01
+profile_instruction=$(python3 scripts/ralph_profile_intake.py campaign/profile-intake.json)
+hmz exec -f "$flow_path" -a claude/glm-5.3:high -c campaign/budget-3h.yaml \
+  "$profile_instruction"$'\n\n'"$(cat campaign/TASK.md)"
 ```
+
+The intake fails before the loop if the skill or this guide is missing, and
+records their paths and SHA-256 hashes. Its injected instruction requires an
+explicit `Read` of the exact skill before changing a kernel. The intake proves
+only that the file was readable; inspect the Claude session or journal to
+verify the agent actually read it. The `.claude/skills/` symlink aids
+interactive discovery but does not itself prove use.
 
 Use **only** this repository's `scripts/dtk.sh gpu` admission. The skill's
 standalone `profile_container.sh` launches a separate raw Docker container and
