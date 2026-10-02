@@ -123,6 +123,9 @@ GPU 模式仍需 DTK runtime、root/privileged 容器身份及 `/dev/kfd`、`/de
 它们不自动转成新入口的验证结果。
 新入口在 `bw1100-1` 的独立设备检查见
 [docs/STANDALONE-DEVICE-VALIDATION-2026-10-01.md](docs/STANDALONE-DEVICE-VALIDATION-2026-10-01.md)。
+后续 Ralph 算子优化若要判断 GPU 瓶颈，按
+[docs/RALPH-PROFILING.md](docs/RALPH-PROFILING.md) 通过本仓库入口采集
+`rocprof` 诊断收据；计时分数仍使用无 profiler 的配对测量。
 
 ## 软件验证
 

@@ -15,6 +15,12 @@
 - The GPU entry is owned by this repository: `scripts/dtk.sh gpu` calls
   `scripts/hcu_run.py`, with no dependency on another project. Inspect live HCU
   and KFD occupancy before admission; leave existing services untouched.
+- For a new agent/Ralph GPU-optimization campaign, read
+  `docs/RALPH-PROFILING.md` and the installed DCU rocprof skill. Treat a
+  diagnostic profile or an explicit task-specific skip reason as an intake
+  gate before GPU-bottleneck claims. Run rocprof through `scripts/rocprof.sh`
+  and this repository's HCU admission, never through a raw-Docker skill helper.
+  Profiled durations are not speed scores; use separately gated paired timing.
 - The task-local per-user lock serializes this suite only. It is not physical
   GPU exclusivity and cannot rule out other users or containers.
 - Implement first, then run focused CPU regression tests with
