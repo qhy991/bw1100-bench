@@ -66,7 +66,6 @@ def run_compiled(position_ids, inv_freq, attention_scaling):
                      str(inv_freq.device))(position_ids, inv_freq)
 
 
-@torch.no_grad()
 def run(position_ids, inv_freq, attention_scaling):
     # Frozen from the original 16-cell community-arm screen: compiled won at
     # <=8192 positions, eager won at 14704/16384/34624. Only public shape
