@@ -40,6 +40,11 @@ def main():
         stream.write(inside(ROOT, args.candidate).read_text())
     source_hash = digest(frozen)
     receipts = []
+    artifact_bindings = {}
+    for name in args.cake_artifact:
+        record = json.loads(inside(ROOT, name).read_text())
+        for path in (name, record['source'], record['schedule']):
+            artifact_bindings[path] = digest(inside(ROOT, path))
     if plan['arm'] == 'cake_ir':
         if not args.cake_artifact:
             raise ValueError('Cake candidates need their executed emission receipts')
@@ -62,7 +67,8 @@ def main():
                  '--gate', relative(gate), '--output', relative(latency)])]
     outcome = {'id': args.id, 'task': task, 'arm': plan['arm'], 'started_at_epoch': time.time(),
                'candidate_source': relative(frozen), 'source_sha256': source_hash,
-               'status': 'not_qualified', 'cake_artifacts': args.cake_artifact}
+               'status': 'not_qualified', 'cake_artifacts': args.cake_artifact,
+               'cake_artifact_bindings': artifact_bindings}
     try:
         for stage, command in stages:
             receipt = folder / (stage + '-admission.json')
@@ -75,6 +81,8 @@ def main():
             outcome[stage + '_completed_at_epoch'] = json.loads(terminal.read_text())['completed_at']
         if digest(frozen) != source_hash:
             raise ValueError('frozen candidate changed during evaluation')
+        if any(digest(inside(ROOT, name)) != expected for name, expected in artifact_bindings.items()):
+            raise ValueError('Compiler artifact changed during evaluation')
         for name in receipts:
             terminal = inside(ROOT, name).with_name(Path(name).stem + '-terminal.json')
             record = json.loads(terminal.read_text())

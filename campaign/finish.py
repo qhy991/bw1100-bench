@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import time
+import hashlib
 
 ROOT = Path(__file__).resolve().parents[1]
 intake = json.loads((ROOT / 'campaign/intake.json').read_text())
@@ -11,7 +12,18 @@ deadline = json.loads((ROOT / 'campaign/deadline.json').read_text())
 if time.time() < deadline['stop_at_epoch'] - 120:
     raise SystemExit('The fixed budget endpoint is not ready; continue useful search')
 outcomes = [json.loads(p.read_text()) for p in (ROOT / 'campaign/evaluations').glob('*/outcome.json')]
-accepted = [d for d in outcomes if d['status'] == 'accepted' and d['completed_at_epoch'] <= deadline['stop_at_epoch']]
+accepted = []
+stale = []
+for d in outcomes:
+    if d['status'] != 'accepted' or d['completed_at_epoch'] > deadline['stop_at_epoch']:
+        continue
+    bindings = dict(d.get('cake_artifact_bindings', {}))
+    bindings[d['candidate_source']] = d['source_sha256']
+    if any(not (ROOT / name).is_file() or hashlib.sha256((ROOT / name).read_bytes()).hexdigest() != expected
+           for name, expected in bindings.items()):
+        stale.append(d['id'])
+        continue
+    accepted.append(d)
 best = max(accepted, key=lambda d: d['conservative_geomean']) if accepted else None
 curve = []
 for minute in protocol['checkpoint_minutes']:
@@ -23,8 +35,12 @@ for minute in protocol['checkpoint_minutes']:
 endpoint = {'arm': plan['arm'], 'task': plan['tasks'][0]['id'], 'protocol': intake['protocol'],
             'budget_hours': protocol['budget_hours'], 'evaluations': len(outcomes),
             'accepted_candidates': len(accepted), 'best_id': best['id'] if best else None,
+            'stale_artifacts_excluded': stale,
             'best_speedup': best['conservative_geomean'] if best else 1.0, 'trajectory': curve,
             'measurement_scope': 'within-budget search; independent pair confirmation pending'}
+correct_times = [d['correctness_completed_at_epoch'] for d in outcomes if 'correctness_completed_at_epoch' in d]
+endpoint['first_full_correct_seconds'] = min(correct_times)-deadline['started_at_epoch'] if correct_times else None
+endpoint['first_robust_win_seconds'] = min(d['completed_at_epoch'] for d in accepted)-deadline['started_at_epoch'] if accepted else None
 with (ROOT / 'campaign/ENDPOINT.json').open('x') as stream:
     json.dump(endpoint, stream, indent=2)
     stream.write('\n')
