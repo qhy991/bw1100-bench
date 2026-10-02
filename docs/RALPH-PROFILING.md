@@ -15,6 +15,21 @@ GPU kernel count/identity if available and use paired callable latency for
 the host-side mechanism. An empty filtered `torch.profiler` list is not a
 diagnostic profile or evidence that rocprof is unavailable.
 
+Do not rely on automatic Claude skill discovery. The launcher must fail early
+unless `$HOME/.agents/skills/dcu-rocprof-report-skill/SKILL.md` is readable,
+and record its SHA-256 in the campaign intake. Put an explicit instruction in
+the first Ralph prompt to **read that exact file** before the first kernel
+change. The `.claude/skills/` symlink is useful for interactive discovery but
+its existence alone does not prove an agent used the skill.
+On node4 the long-lived tmux server once inherited a stale `/home/testuser01`
+HOME; set `HOME=/data3/testuser01` in the launcher before this preflight:
+
+```bash
+skill="$HOME/.agents/skills/dcu-rocprof-report-skill/SKILL.md"
+test -r "$skill" || { echo "DCU profiling skill is missing" >&2; exit 2; }
+sha256sum "$skill"  # retain the path and hash in campaign intake
+```
+
 Use **only** this repository's `scripts/dtk.sh gpu` admission. The skill's
 standalone `profile_container.sh` launches a separate raw Docker container and
 does not own this suite's HCU lock or terminal receipt. `scripts/rocprof.sh`
