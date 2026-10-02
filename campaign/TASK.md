@@ -1,4 +1,4 @@
-# Matched engineering pilot: direct Triton versus the standalone Cake Compiler
+# Fixed3h best-result comparison: direct Triton versus Cake Compiler
 
 Read root AGENTS.md, campaign/AGENTS.md, campaign/intake.json and its group plan,
 campaign/deadline.json, STATUS.md/JOURNAL.md, docs/RALPH-PROFILING.md and both
@@ -7,12 +7,16 @@ profiling skill; also Read /data3/testuser01/.agents/skills/rocm-kernelwiki/SKIL
 Read the assigned baseline and original task definition/reference/workloads.
 
 The group plan owns ONE original task, its community denominator, assigned HCU,
-authoring arm and 3h maximum wall budget (165min search +15min handoff).
+authoring arm and protocol.json: exactly the same3h opportunity, including
+model authoring, compilation, GPU checks, timing and profiling. The last15min
+is reserved equally for handoff; GPU admission must fit the remaining budget.
 Other groups are independent. Both arms use Claude/GLM-5.3:high, the same prompt,
 reference visibility, skills, data, dtype/tolerance, budget and common wall timer.
-This is an engineering feasibility pilot with one run per arm/task. It is not an
-Open-Cake Lab Campaign, an isolated filesystem-custody experiment, or a scientific
-causal estimate. Do not invent a Lab acceptance or a treatment-effect conclusion.
+This is an exploratory matched-budget comparison with one run per arm/task.
+The primary endpoint is the best qualified performance attained within3h, not
+the first successful candidate. Record the same time-performance checkpoints.
+It is not an Open-Cake Lab Campaign or a fully isolated scientific experiment.
+No statistical treatment-effect estimate is justified by one pair per task.
 
 Only the authoring surface differs:
 - direct_triton: write custom kernels directly in Triton. Do not use Cake Compiler,
@@ -76,42 +80,66 @@ Do not use HCU0 or another group's GPU or stop any existing service. All CPU
 container work must have /usr/bin/timeout -k 10s 180s inside the container.
 No new GPU admissions in final15min. Keep rejected and failed artifacts.
 
-Every accepted candidate needs bwbench.py check on all original16 workloads x10
-rounds, same seeds/precision/tolerances, with current source binding. Both arms
-MUST measure with the unmodified common campaign/paired_wall.py, no alternate
-speed harness or CUDA-event substitute. After full gate:
-  HIP_VISIBLE_DEVICES=HCU BWBENCH_TIMEOUT=900 bash campaign/admit.sh gpu IMAGE \
-    campaign/results/NEW-latency-admission.json env \
-    AITER_JIT_DIR=/work/.local/aiter-jit-cache TRITON_CACHE_DIR=/work/.local/triton-cache \
-    python3 campaign/paired_wall.py --candidate /work/campaign/candidates/CAND.py \
-    --gate campaign/results/FULL-GATE.json --output campaign/results/NEW-latency.json
-This measures whole run(*inputs), warmup10,30 samples/direction, actual alternating
-baseline/candidate and candidate/baseline order, A/A, input-mutation guard and
-absolute wall microseconds. Robust improvement exceeds max(A/A drift,1%) with
-no material regression in either direction. Include public dispatch overhead.
-Do not claim an arm comparison from separate score formats or profiled time.
+Search probes may use smoke or bounded shape screens through admission, but
+ONLY campaign/evaluate.py promotes a candidate into the best-result ledger. It
+freezes a self-contained candidate into campaign/candidates/frozen_ID.py, replays
+Cake emissions when applicable, runs all16 original workloads x10 rounds, then
+uses the SAME unmodified paired_wall.py for both arms. Do not add an alternative
+speed harness or edit frozen candidates/receipts. Your candidate must be one Python
+source besides pinned community libraries, cake_bridge, and declared emission
+receipts; move custom helper code into that source before canonical evaluation.
 
-Record candidate order, hypotheses, first full-correct checkpoint, first robust
-win checkpoint, elapsed time, GPU admissions, accepted result and any coverage
-limitations. The same stopping policy applies to both arms: stop early when two
-structurally distinct hypotheses have been evaluated or specifically refused and
-one candidate is accepted; otherwise continue useful work to the timebox, then
-hand off an honest no_robust_gain or blocked outcome. Never fill time with settled
-checks. This pilot records the attained endpoint and time-to-first-valid-candidate;
-it does not estimate best performance at a fully consumed3h search budget.
+Host invocation (correct HOME inherited from launcher):
+  python3 campaign/evaluate.py --candidate campaign/candidates/CAND.py --id UNIQUE \
+    --profile-evidence .local/profile/BASELINE/REPORT.md
+Cake adds one --cake-artifact campaign/generated/UNIQUE/receipt.json for EACH
+executed emission. Profile the current best on the same representative workload
+when making counter claims; record an actual skip reason if unavailable.
+The common evaluator owns HCU, environment, full gate,30sample paired wall timing,
+A/A and source binding. It writes campaign/evaluations/ID/outcome.json. Only status
+accepted can enter the incumbent ledger. A full correctness gate alone is not an
+accepted performance result. Declare any explicit numerical/capability refusal.
+
+Ranking is predeclared in protocol.json: geometric mean across all16 original
+UUIDs of the CONSERVATIVE directional speedup min(forward_ratio,reverse_ratio).
+Require at least one robust win and no material per-cell regression, using
+max(A/A drift,1%). Include the complete callable and all public dispatch cost.
+The frozen community baseline is the initial incumbent (speedup1), never weaken it.
+Do not time profiled durations, cache outputs or hide regressions in an average.
+
+Record candidate order and one falsifiable hypothesis per mechanism change.
+After every accepted evaluation, update the incumbent if its canonical ranking
+improves. Reaching a first valid candidate or a first win DOES NOT END THE RUN.
+Continue distinct improvements, resource/tile/launch tuning and public dispatch
+until the fixed search window expires. Avoid duplicate settled evaluations;
+negative results prune that hypothesis, not the whole experiment. Record first
+full-correct and first robust-win elapsed time as secondary endpoints. Do not
+read previous pilot or historical winners; these successors start fresh.
+
+At30,60,120 and165minutes record the best accepted candidate available at that
+time. These checkpoints are derived from immutable outcome completion times,
+not backfilled assertions. Preserve all successful and failed outcomes. The
+primary180minute endpoint is the highest ranked qualified candidate completed
+within the budget. The final15min permits CPU handoff, not new GPU jobs. No
+candidate discovery or editing after deadline gets credited to the3h endpoint.
+
+Before stop, commit authoring sources and write a factual README/JOURNAL. At the
+last2minutes, run python3 campaign/finish.py ONCE to derive ENDPOINT.json and
+DONE.json from the canonical accepted ledger. The flow also invokes it between
+turns if needed. Never author an early DONE or change the stopping checker.
+finish.py selects the best attained result; earlier successes remain checkpoints.
+Independent same-HCU comparison of the two frozen endpoints is a separate
+confirmation phase after budget, with no candidate edits or extra search credit.
 
 Write candidate sources in campaign/candidates and harnesses in campaign/tools,
 Schedules in campaign/schedules and emitted artifacts in campaign/generated.
 Update STATUS/JOURNAL and commit source/authoring artifacts on this arm's branch.
 Raw results/logs/dataset stay ignored. Do not push/merge or message other agents.
 
-Finish README and DONE.json covering exactly the assigned task. Each row has task,
-status accepted/no_robust_gain/blocked, reason, evidence paths and profile_evidence
-or a specific profile_skip_reason. Accepted rows also need candidate_source,
-correctness_source_sha256 at gate, correctness_report and latency_report. Common
-latency JSON must bind current sources and all16 UUIDs. A Cake accepted row also
-needs cake_artifacts listing every executed generated receipt, with kernel/library
-coverage described in README. The owner independently replays each Schedule and
-checks exact emitted bytes before accepting the Cake outcome. Do not edit the
-completion checker to bypass failures. Confirm released receipts/no live owned
-containers, then return; the derived Ralph flow stops at validated completion.
+The owner finalizer owns ENDPOINT.json and DONE.json. Accepted outcomes need a
+full original gate, canonical timing, source binding and executed Cake receipts.
+The owner independently replays Schedule->emission before accepting Cake results.
+If there is no accepted custom candidate, retain the baseline incumbent and the
+actual failures/refusals; do not claim an optimized artifact. Search failures and
+provider/infrastructure faults are separate. Keep within-budget artifacts intact
+for common independent confirmation after freeze.

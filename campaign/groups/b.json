@@ -2,19 +2,17 @@
   "group": "b",
   "hcu": 2,
   "arm": "cake_ir",
-  "budget_hours": 3,
-  "final_minutes": 15,
   "base_commit": "77a2848f95bd2a13fea0ce69dcc1147ccac39a93",
   "compiler_commit": "f09a3e859859e848f33a21b63412a306eea8738f",
-  "claim_scope": "engineering_feasibility_only",
+  "claim_scope": "exploratory_matched_budget_comparison",
   "reference_access": "known_kernel_reproduction",
   "tasks": [
     {
       "id": "L1/069_rms_norm",
-      "minutes": 165,
       "baseline": "baselines/l1_069_vllm_aiter_fused.py",
       "baseline_sha256": "1430ad1e28a40be334b795de13083caa537a03049d92b5148530b2bee63c7b60",
       "smoke_uuid": "b6b63196-7f11-5b0d-969e-33e44f70975f"
     }
-  ]
+  ],
+  "protocol": "campaign/protocol.json"
 }

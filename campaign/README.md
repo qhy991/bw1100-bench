@@ -1,7 +1,7 @@
-# Cake Compiler versus direct Triton: BW1100 engineering pilot
+# Cake Compiler versus direct Triton: BW1100 fixed3h best-result comparison
 
 Six independent fresh-session Claude/GLM-5.3:high Ralph processes, three task pairs,
-maximum3h each with identical stopping policy and common complete-call wall timer.
+fixed3h budget each, no first-win early stop, and common complete-call wall timer.
 
 | Group | HCU | Task | Arm |
 |---|---|---|---|
@@ -24,15 +24,19 @@ part of bw1100-bench's normal import/runtime path. The original bench main and
 previous experiments retain their independence. Neither Compiler nor installed
 Ralph flow is modified. This is not a canonical Open-Cake Lab Campaign.
 
-Claim: engineering feasibility, valid artifacts, attained task latency,
-authoring refusals/effort and time-to-first-valid-candidate. One run per arm/task,
-prompt-scoped reference access, no physical GPU-exclusivity witness: no causal
-agent-improvement or scientific arm-effect estimate. Future replication should
-freeze a stronger authoring-custody boundary and independent matched seeds.
+Primary endpoint: best qualified conservative geomean speedup found within3h.
+Both arms may improve an incumbent throughout the same fixed search window.
+Time-to-first-correct/first-win and the30/60/120/165/180minute best-performance
+trajectory are secondary. protocol.json owns endpoint/ranking/stopping policy.
+Only evaluate.py accepted receipts enter the ledger; finish.py selects the best.
+One run per arm/task and prompt-scoped reference access support an exploratory
+comparison, not a statistical agent-effect estimate. After source freeze, a
+common same-HCU confirmation remeasures both endpoints with no candidate edits.
+Final15minutes are reserved equally for handoff, with no new GPU admissions.
 
 Actual arm/start/deadline are owned by campaign/intake.json and deadline.json.
 Results/logs/profiles remain in each remote root:
-/data3/testuser01/experiments/bw1100-bench-cake-control-GROUP-20261002
-on bw1100-1, branches codex/cake-control-GROUP-20261002.
+/data3/testuser01/experiments/bw1100-bench-cake-fixed3h-GROUP-20261002
+on bw1100-1, branches codex/cake-fixed3h-GROUP-20261002.
 Read campaign/DONE.json, JOURNAL.md, STATUS.md, results/ and .local/profile/.
 Source and Schedule artifacts remain committed; raw dataset stays ignored.

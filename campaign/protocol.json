@@ -1,0 +1,24 @@
+{
+  "schema": "bwbench.fixed-budget-comparison.v1",
+  "budget_hours": 3,
+  "final_handoff_minutes": 15,
+  "checkpoint_minutes": [
+    30,
+    60,
+    120,
+    165,
+    180
+  ],
+  "primary_endpoint": "best_qualified_conservative_geomean_speedup_attained_within_budget",
+  "secondary_endpoints": [
+    "time_to_first_full_correct_candidate",
+    "time_to_first_robust_win",
+    "best_performance_trajectory",
+    "provider_usage_and_gpu_admissions"
+  ],
+  "minimum_materiality": 0.01,
+  "stop_at_first_win": false,
+  "replicates_per_arm_task": 1,
+  "claim_scope": "exploratory_matched_budget_comparison",
+  "post_budget_confirmation": "separate_common_timer_remeasurement_on_same_HCU_without_candidate_edits"
+}

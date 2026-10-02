@@ -1,3 +1,3 @@
 # Journal
 
-Owner prepared the matched engineering task and common evaluation. Ralph owns all candidate optimizations.
+Fresh successors after the user clarified the fixed3h best-performance endpoint. Earlier first-win pilots were cancelled and are excluded from this comparison. Owner prepared the common evaluator; Ralph owns all candidates.

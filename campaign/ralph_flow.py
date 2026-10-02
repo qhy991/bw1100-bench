@@ -20,6 +20,17 @@ def run(agents: tuple[Agent], task: str, state: dict[str, Any] | None = None) ->
     kept = state if state is not None else {}
     stalled = 0
     while True:
+        deadline = Path('campaign/deadline.json')
+        if deadline.exists():
+            import json
+            stop_at = json.loads(deadline.read_text())['stop_at_epoch']
+            if time.time() >= stop_at - 900 and time.time() < stop_at - 120:
+                print('search window closed; controller waits for endpoint without another model call', flush=True)
+                time.sleep(min(20, stop_at - 120 - time.time()))
+                continue
+            if time.time() >= stop_at - 120 and not Path('campaign/DONE.json').exists():
+                import subprocess
+                subprocess.run([sys.executable, 'campaign/finish.py'], check=True)
         if completed(Path.cwd()):
             print('stopping: validated campaign/DONE.json; no owned live container')
             return

@@ -3,6 +3,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import time
 
 
 def inside(root, name):
@@ -80,6 +81,9 @@ def completed(root):
         return False
     try:
         intake = load(root, 'campaign/intake.json')
+        deadline = load(root, 'campaign/deadline.json')
+        if time.time() < deadline['stop_at_epoch'] - 120:
+            return False
         plan = load(root, intake['plan'])
         validate(root, json.loads(marker.read_text()), plan)
         if plan.get('arm') == 'cake_ir':
@@ -101,7 +105,7 @@ def completed(root):
                     universal_newlines=True, timeout=200)
                 if child.returncode:
                     raise ValueError('Compiler emission replay failed: ' + child.stderr[-300:])
-        for folder in ('campaign/results', '.local/profile'):
+        for folder in ('campaign/results', 'campaign/evaluations', '.local/profile'):
             for path in (root / folder).rglob('*.json'):
                 doc = json.loads(path.read_text())
                 if not isinstance(doc, dict):

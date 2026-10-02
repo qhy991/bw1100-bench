@@ -1,3 +1,3 @@
-# Cake Compiler engineering control
+# Fixed3h best-result comparison
 
-Prepared; intake and group plan own the assigned arm and task.
+Prepared; protocol and intake own the endpoint, arm and deadline. No first-win early stop.

@@ -5,4 +5,6 @@ profile-intake.json
 deadline.json
 DONE.json
 exit-code
+evaluations/
+ENDPOINT.json
 __pycache__/
