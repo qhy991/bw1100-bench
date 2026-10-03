@@ -9,5 +9,6 @@ evaluations/
 ENDPOINT.json
 __pycache__/
 controller-status.json
+SEARCH-EXHAUSTED.json
 prior/*.json
 !prior/seed.json

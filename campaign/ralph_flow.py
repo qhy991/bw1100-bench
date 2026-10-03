@@ -24,6 +24,17 @@ def run(agents: tuple[Agent], task: str, state: dict[str, Any] | None = None) ->
         if deadline.exists():
             import json
             stop_at = json.loads(deadline.read_text())['stop_at_epoch']
+            exhaustion = Path('campaign/SEARCH-EXHAUSTED.json')
+            if exhaustion.exists() and time.time() < stop_at - 120:
+                note = json.loads(exhaustion.read_text())
+                seed = Path('campaign/evaluations/seed00/outcome.json')
+                proofs = note.get('new_hypothesis_evidence', [])
+                if (seed.exists() and json.loads(seed.read_text()).get('status') == 'accepted'
+                        and note.get('reason') and len(proofs) >= 2
+                        and all(Path(p).is_file() for p in proofs)):
+                    print('agent-reported exhaustion with new evidence; controller holds incumbent without more model calls', flush=True)
+                    time.sleep(min(20, stop_at - 120 - time.time()))
+                    continue
             if time.time() >= stop_at - 900 and time.time() < stop_at - 120:
                 print('search window closed; controller waits for endpoint without another model call', flush=True)
                 time.sleep(min(20, stop_at - 120 - time.time()))

@@ -188,3 +188,11 @@ post-budget confirmation may finish afterward without any new model authoring.
 Public-shape fallback to the immutable inherited parent is allowed in both arms
 to retain its winning cells; include dispatch cost and record the parent source
 dependency. A better average cannot conceal a material regression from the parent.
+
+If seed00 is accepted and at least TWO genuinely NEW hypotheses have been tested
+or specifically refused with durable artifacts, you may write
+campaign/SEARCH-EXHAUSTED.json with a factual reason and new_hypothesis_evidence
+(list of at least two relative files from THIS continuation). This is an
+agent-reported limit, not proof of global optimality. The controller then holds
+the incumbent to the budget endpoint without repeated model calls. Do not use
+historical failed screens or hash checks as new hypothesis evidence.
