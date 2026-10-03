@@ -2,10 +2,10 @@
   "group": "f",
   "hcu": 6,
   "arm": "cake_ir",
-  "base_commit": "77a2848f95bd2a13fea0ce69dcc1147ccac39a93",
+  "experiment_kind": "continuation",
+  "replicate": null,
   "compiler_commit": "f09a3e859859e848f33a21b63412a306eea8738f",
-  "claim_scope": "exploratory_seeded_continuation",
-  "reference_access": "known_kernel_reproduction",
+  "protocol": "campaign/protocol.json",
   "tasks": [
     {
       "id": "L1/001_attention_softmax_dropout_value_matmul_backward",
@@ -14,10 +14,9 @@
       "smoke_uuid": "d0ad1a89-e905-51d0-acb2-a746b3fb6a6b"
     }
   ],
-  "protocol": "campaign/protocol.json",
+  "reference_access": "known_kernel_reproduction",
   "parent": {
-    "root": "/data3/testuser01/experiments/bw1100-bench-cake-fixed3h-f-20261002",
-    "endpoint": "campaign/prior/ENDPOINT.json",
+    "root": "/data3/testuser01/experiments/bw1100-bench-cake-continued3h-f-20261003",
     "seed_manifest": "campaign/prior/seed.json"
   }
 }

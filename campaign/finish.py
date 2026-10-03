@@ -24,7 +24,8 @@ for d in outcomes:
         stale.append(d['id'])
         continue
     accepted.append(d)
-ranking = lambda d: d.get('incremental_conservative_geomean', d['conservative_geomean']) if intake.get('round') == 2 else d['conservative_geomean']
+continuation = bool(intake.get('seed')) or intake.get('round') == 2
+ranking = lambda d: d.get('incremental_conservative_geomean', d['conservative_geomean']) if continuation else d['conservative_geomean']
 best = max(accepted, key=ranking) if accepted else None
 curve = []
 for minute in protocol['checkpoint_minutes']:
@@ -33,7 +34,7 @@ for minute in protocol['checkpoint_minutes']:
     curve.append({'minute': minute, 'best_qualified_id': champion['id'] if champion else None,
                   'speedup': champion['conservative_geomean'] if champion else 1.0,
                   'baseline_only': champion is None})
-    if intake.get('round') == 2:
+    if continuation:
         curve[-1]['incremental_over_parent'] = ranking(champion) if champion else None
 endpoint = {'arm': plan['arm'], 'task': plan['tasks'][0]['id'], 'protocol': intake['protocol'],
             'budget_hours': protocol['budget_hours'], 'evaluations': len(outcomes),
@@ -44,9 +45,11 @@ endpoint = {'arm': plan['arm'], 'task': plan['tasks'][0]['id'], 'protocol': inta
 correct_times = [d['correctness_completed_at_epoch'] for d in outcomes if 'correctness_completed_at_epoch' in d]
 endpoint['first_full_correct_seconds'] = min(correct_times)-deadline['started_at_epoch'] if correct_times else None
 endpoint['first_robust_win_seconds'] = min(d['completed_at_epoch'] for d in accepted)-deadline['started_at_epoch'] if accepted else None
-seed = next((d for d in accepted if d['id'] == 'seed00'), None)
-if intake.get('round') == 2:
-    endpoint['round'] = 2
+seed = next((d for d in accepted if d.get('is_parent_initializer') or d['id'] == 'seed00'), None)
+endpoint['experiment_kind'] = intake.get('experiment_kind')
+endpoint['replicate'] = intake.get('replicate')
+if continuation:
+    endpoint['round'] = intake.get('round', 2)
     endpoint['parent'] = intake['parent']
     endpoint['seed00_speedup'] = seed['conservative_geomean'] if seed else None
     endpoint['best_over_seed_score_ratio'] = best['conservative_geomean']/seed['conservative_geomean'] if best and seed else None

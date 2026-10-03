@@ -9,7 +9,10 @@
     165,
     180
   ],
-  "primary_endpoint": "best_qualified_parent_relative_geomean_after_additional3h",
+  "primary_endpoint": {
+    "fresh_replication": "best_qualified_community_relative_performance_within3h",
+    "continuation": "best_qualified_parent_relative_performance_after_additional3h"
+  },
   "secondary_endpoints": [
     "time_to_first_full_correct_candidate",
     "time_to_first_robust_win",
@@ -19,11 +22,11 @@
   "minimum_materiality": 0.01,
   "stop_at_first_win": false,
   "replicates_per_arm_task": 1,
-  "claim_scope": "exploratory_seeded_continuation",
-  "post_budget_confirmation": "same_HCU_round2_direct_vs_Cake_and_parent_vs_round2_without_source_edits",
-  "round": 2,
+  "claim_scope": "Gateup_3h_replication_and_GQA_seeded_continuation",
+  "post_budget_confirmation": "same_HCU_frozen_direct_vs_Cake_and_GQA_parent_relative_checks",
+  "round": 3,
   "parent_search_hours": 3,
-  "initial_incumbent": "own_parent_frozen_best",
+  "initial_incumbent": "by_plan_kind: community baseline for fresh; own frozen parent for continuation",
   "reference_access": "own_parent_history_only",
   "outer_wall_timeout": true,
   "parent_regression_policy": "same_AA_or1percent_per_cell_gate_as_community_comparison"

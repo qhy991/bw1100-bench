@@ -27,10 +27,12 @@ def run(agents: tuple[Agent], task: str, state: dict[str, Any] | None = None) ->
             exhaustion = Path('campaign/SEARCH-EXHAUSTED.json')
             if exhaustion.exists() and time.time() < stop_at - 120:
                 note = json.loads(exhaustion.read_text())
-                seed = Path('campaign/evaluations/seed00/outcome.json')
+                outcomes = [json.loads(p.read_text()) for p in Path('campaign/evaluations').glob('*/outcome.json')]
+                intake = json.loads(Path('campaign/intake.json').read_text())
+                qualified = any(d.get('status') == 'accepted' and
+                                (not intake.get('seed') or d.get('is_parent_initializer')) for d in outcomes)
                 proofs = note.get('new_hypothesis_evidence', [])
-                if (seed.exists() and json.loads(seed.read_text()).get('status') == 'accepted'
-                        and note.get('reason') and len(proofs) >= 2
+                if (qualified and note.get('reason') and len(proofs) >= 2
                         and all(Path(p).is_file() for p in proofs)):
                     print('agent-reported exhaustion with new evidence; controller holds incumbent without more model calls', flush=True)
                     time.sleep(min(20, stop_at - 120 - time.time()))

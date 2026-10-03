@@ -1,198 +1,113 @@
-# Round2: another3h from your own frozen best result
+# Targeted3h experiment: Gate/up independent replication or GQA continuation
 
-Read root AGENTS.md, campaign/AGENTS.md, campaign/intake.json and its group plan,
-campaign/deadline.json, STATUS.md/JOURNAL.md, docs/RALPH-PROFILING.md and both
-installed skill entrypoints through Read. The injected intake names the DCU
-profiling skill; also Read /data3/testuser01/.agents/skills/rocm-kernelwiki/SKILL.md.
-Read the assigned baseline and original task definition/reference/workloads.
-FIRST also Read campaign/prior/seed.json, ENDPOINT.json, JOURNAL.md, STATUS.md
-and the inherited candidate named by seed.json. Prior documents are historical
-evidence; the NEW intake/deadline/protocol own this additional3h window.
+Read root AGENTS.md, campaign/AGENTS.md, intake.json, its group plan, protocol.json,
+deadline.json, STATUS/JOURNAL, docs/RALPH-PROFILING.md and the installed profiling
+and ROCm Wiki skills through Read. Use Claude/GLM-5.3:high and the assigned HCU.
+The plan's experiment_kind determines what this run means; do not mix the modes.
 
-The group plan owns ONE original task, its community denominator, assigned HCU,
-authoring arm and protocol.json: exactly the same3h opportunity, including
-model authoring, compilation, GPU checks, timing and profiling. The last15min
-is reserved equally for handoff; GPU admission must fit the remaining budget.
-Other groups are independent. Both arms use Claude/GLM-5.3:high, the same prompt,
-reference visibility, skills, data, dtype/tolerance, budget and common wall timer.
-This is a seeded continuation, not a fresh independent replicate. Each arm
-starts from its OWN previous best and previous tested hypotheses, then receives
-an additional3h. Report incremental gains and cumulative6h separately.
-The primary endpoint is the best qualified performance attained within3h, not
-the first successful candidate. Record the same time-performance checkpoints.
-It is not an Open-Cake Lab Campaign or a fully isolated scientific experiment.
-No statistical treatment-effect estimate is justified by one pair per task.
+FRESH_REPLICATION (groups a/b/c/d, L1/048): independently optimize the original
+Gate/up GELU-tanh task from its shipped-community baseline only. Do not read ANY
+prior custom candidate, old experiment history, previous score, other replicate
+or other arm. The same untouched baseline and high-level reference are visible
+in both arms. These are two new independent3h pairs testing the ORIGINAL3h
+question. They are NOT replications of the6h continuation endpoint. No old
+winner is seeded, and no later-winning algorithm is supplied in this task.
 
-Only the authoring surface differs:
-- direct_triton: write custom kernels directly in Triton. Do not use Cake Compiler,
-  generated Cake code or HIP/CUDA/C++ GPU computation. Your own prior direct
-Triton winner is the authorized seed.
-- cake_ir: write complete gfx938 Schedules and use the unchanged standalone Cake
-  Compiler at .deps/cake-ir (commit in plan) via campaign/cake_bridge.py to assess
-  and lower them. ALL newly authored custom GPU computation must come from
-  unchanged Compiler emission. No hand-written Triton/HIP/C++ kernel, patch of
-  generated source, or fallback pretending to be Cake. Existing shared community
-  GEMMs/operators remain allowed for both arms; explicitly record that coverage.
+CONTINUATION (groups e/f, L1/001): read campaign/prior/seed.json, ENDPOINT,
+JOURNAL and STATUS and the selected parent. Read campaign/ANALYSIS-GQA.json;
+these are shared high-level hypotheses, not another arm's code. Read-only access
+to your OWN parent root is allowed for missing evidence. Never read another arm.
+Initialize the byte-identical inherited winner through evaluate.py as seed00
+(any unique retry ID is allowed; initializer identity is determined by source,
+not ID). Then search new mechanisms and compare them directly with the parent.
+Report incremental3h and cumulative9h separately; this is not an independent run.
 
-Both arms may read the original reference, frozen community baseline and their
-OWN parent history. The seed source and committed Schedule artifacts already exist
-in this new root; campaign/prior contains the selected outcome and context.
-You may read your own parent root in groups/GROUP.json for missing historical
-profile/report artifacts, READ ONLY. Never read another arm's sources/logs or
-other experiments. Do not modify historical files, the Compiler, gateway,
-baseline, suite, source locks, reference or tolerances.
+Common authoring treatment:
+- direct_triton writes custom Triton kernels directly; no Cake or handwritten
+  HIP/CUDA/C++ GPU computation. Existing shared community operators are allowed.
+- cake_ir writes gfx938 Schedules, assesses and lowers through the unchanged
+  Compiler at .deps/cake-ir (commit in plan) using cake_bridge.py. All custom GPU
+  computation must be unchanged Compiler emission. Shared library calls are
+  allowed with coverage recorded. Do not patch generated source or the Compiler.
+  Read IR_GUIDE.md and compiler/AUTHORING_CONTRACT.md; corpus examples are syntax
+  resources. CPU prefilter localized Findings and supported resource analysis
+  before GPU. Missing timing calibration remains unmodeled.
 
-Initialization: before new optimization, run canonical evaluate.py on the inherited
-winner with --id seed00. This gives the continuation a freshly measured incumbent
-and first full gate in this new root. For Cake, pass every receipt in seed.json's
-handoff_row.cake_artifacts. Historical profile REPORT paths may be used from copied
-campaign/prior context, or collect a new decision-relevant profile. Prior160-case
-proof is retained; the new canonical seed evaluation settles current timing.
-After seed00, keep it as incumbent unless a new canonical result ranks higher.
-Do not weaken the community denominator or replace it with the seed; benchmark
-against the same community adapter and separately report gain over seed00.
+Original contracts:
+L1/048 has two BF16 projections, GELU-tanh (despite SwiGLU in title), original
+projection/activation rounding and original output shape. Denominator is
+baselines/l1_048_flaggems_gelu.py including both GEMMs and activation.
+L1/001 has both GQA training gradients, original mask/dropout scale, FP32 softmax
+backward chain and GQA reduction/rounding. Denominator is the native ATen
+training-backward/vendor-GEMM composition in the plan. Never substitute a weak
+reference denominator, change precision/tolerance, or silently approximate a
+required FP32 intermediate. All16 workloads x10 original rounds remain mandatory.
 
-CUDA graph capture/replay and persistent scratch STORAGE are allowed equally in
-both arms, provided each call actually recomputes from its current inputs and
-preserves the original output contract. Never memoize answers or select from
-expected outputs/data contents. Graph/dispatch overhead belongs in full-call
-wall timing. In the Cake arm, GPU computation inside a graph must still be unchanged
-Compiler-emitted kernels or explicitly recorded shared community operations.
+CUDA graph replay/persistent scratch storage is allowed equally if every call
+recomputes from CURRENT inputs and preserves the output contract. No answer
+memoization or tensor-content/expected-output route selection. Public metadata
+dispatch is allowed and included in complete-call timing. All graph computation
+in Cake must still use unchanged emitted kernels or recorded community calls.
 
-Do not simply repeat the parent's failed/settled hypotheses. Revisit a rejected
-mechanism only when you state a new configuration or diagnosis that changes its
-prediction. A correct first seed is not the endpoint. Pursue meaningful new
-mechanisms, alternative public-shape dispatch, ABI/launch overhead and resource
-configurations. If genuinely exhausted, record the exact remaining limit and
-return the turn; do not keep the model occupied with sleep loops or hash rituals.
-The controller owns checkpoint waiting after the search cutoff.
+Budget: model authoring, CPU compile, GPU checks, profiling and timing all count
+inside the same3h opportunity. Final15min are reserved for CPU handoff, no new
+GPU admission. The outer process timeout enforces the deadline. First success is
+not the stopping rule; continue meaningful distinct improvements. Preserve all
+failed/refused attempts. Avoid stale hash rituals, repeated settled screens and
+model sleep loops. Search exhaustion is an agent-reported limit only.
 
-Task semantics:
-- L1/069: residual + RMSNorm. Residual addition is rounded to BF16 before the
-  FP32 normalization chain; preserve supplied weights and epsilon. Denominator
-  baselines/l1_069_vllm_aiter_fused.py is the actual vLLM->AITER fused path.
-- L1/048: two projection GEMMs followed by GELU-tanh times up, despite the title
-  saying SwiGLU. Preserve intermediate BF16 projection rounding. Denominator
-  baselines/l1_048_flaggems_gelu.py includes both GEMMs and the activation.
-- L1/001: GQA training backward, both original gradient outputs; FP32 softmax
-  backward chain and original dropout/masking/group-reduction rounding. Denominator
-  baselines/l1_001_aten_training_backward.py uses native backward + vendor GEMMs.
-
-Explore structurally distinct candidates/hypotheses. Cake uses public Compiler
-+Verifier before GPU: construct/assess, retain localized Findings and static
-analysis, then lower only eligible candidates. Rank using supported resource facts;
-Hygon calibration gaps stay unmodeled, not borrowed from another target. A refusal
-is a measured capability limit to report, not permission to edit the Compiler.
-Read .deps/cake-ir/docs/IR_GUIDE.md and compiler/AUTHORING_CONTRACT.md in the Cake
-arm; examples in corpus/schedules are syntax resources, not ready-made task winners.
-CPU authoring helper:
-  bash scripts/dtk.sh cpu IMAGE /usr/bin/timeout -k 10s 180s \
-    python3 campaign/cake_bridge.py emit campaign/schedules/NEW.json \
-    --output-dir campaign/generated/UNIQUE
-Retain all Schedule/assessment/source/receipt files. candidate.py may load an
-already generated callable using from campaign.cake_bridge import load, then
-load('campaign/generated/UNIQUE/receipt.json'). Use only public metadata dispatch;
-reshape/transpose/output binding is adapter work, tensor-content computation is not.
-Compiler loading/lowering is a CPU authoring phase outside all GPU timing.
-
-Fresh-smoke the frozen baseline (prior full160 qualification is settled). Before
-GPU-bottleneck claims collect a bounded baseline rocprof diagnostic, then profile
-any accepted candidate on the same original workload with the same counters.
-Use campaign/admit.sh profile, matched target kernel rows, <=6 metrics/group,
-CSV validation and REPORT.md. Record concrete task-specific failure/skip reasons;
-profiled duration is never a score. Prewarm AITER/Triton outside rocprof with
+Fresh-smoke the unchanged baseline; its original full qualification is settled.
+Collect bounded actual baseline rocprof via campaign/admit.sh profile (one <=6
+counter group, real kernel regex, validated CSV+REPORT) before bottleneck claims.
+Profile the best candidate on the same workload to support counter claims, or
+retain the exact failed command and a specific unavailable/not-relevant reason.
+Profiled durations are not speed scores. Prewarm AITER/Triton separately using
 persistent AITER_JIT_DIR=/work/.local/aiter-jit-cache and
 TRITON_CACHE_DIR=/work/.local/triton-cache passed explicitly via env in commands.
 
-GPU entry ONLY campaign/admit.sh gpu|profile, assigned HCU from intake,
-BWBENCH_TIMEOUT<=900 and unique admission/output paths. Image:
-sha256:3ad0ae7192b8f9bafdf5b48fc414f8785f3c2463005e6b25290b7f75146ff260
-Do not use HCU0 or another group's GPU or stop any existing service. All CPU
-container work must have /usr/bin/timeout -k 10s 180s inside the container.
-No new GPU admissions in final15min. Keep rejected and failed artifacts.
+GPU entry ONLY campaign/admit.sh gpu|profile, assigned HCU, unique outputs and
+BWBENCH_TIMEOUT<=900. Image is pinned in intake. Do not use HCU0 or stop services.
+CPU work uses scripts/dtk.sh cpu IMAGE /usr/bin/timeout -k10s180s ... (use separate
+arguments -k 10s 180s). Keep dataset/raw results/logs ignored and historical.
 
-Search probes may use smoke or bounded shape screens through admission, but
-ONLY campaign/evaluate.py promotes a candidate into the best-result ledger. It
-freezes a self-contained candidate into campaign/candidates/frozen_ID.py, replays
-Cake emissions when applicable, runs all16 original workloads x10 rounds, then
-uses the SAME unmodified paired_wall.py for both arms. Do not add an alternative
-speed harness or edit frozen candidates/receipts. Your candidate must be one Python
-source besides pinned community libraries, cake_bridge, and declared emission
-receipts; move custom helper code into that source before canonical evaluation.
+Candidate authoring lives in campaign/candidates (one self-contained Python
+source besides pinned libraries, immutable parent fallback where applicable,
+cake_bridge and declared emission receipts). Schedules/generated artifacts live
+in campaign/schedules and campaign/generated. Emit with a unique output-dir:
+  bash scripts/dtk.sh cpu IMAGE /usr/bin/timeout -k 10s 180s \
+    python3 campaign/cake_bridge.py emit campaign/schedules/NEW.json \
+    --output-dir campaign/generated/UNIQUE
+Load pre-emitted callables using campaign.cake_bridge.load in the adapter; no
+Compiler work inside GPU timing. Keep all receipt/assessment/source associations.
 
-Host invocation (correct HOME inherited from launcher):
+ONLY canonical evaluate.py promotes a candidate:
   python3 campaign/evaluate.py --candidate campaign/candidates/CAND.py --id UNIQUE \
-    --profile-evidence .local/profile/BASELINE/REPORT.md
-Cake adds one --cake-artifact campaign/generated/UNIQUE/receipt.json for EACH
-executed emission. Profile the current best on the same representative workload
-when making counter claims; record an actual skip reason if unavailable.
-The common evaluator owns HCU, environment, full gate,30sample paired wall timing,
-A/A and source binding. It writes campaign/evaluations/ID/outcome.json. Only status
-accepted can enter the incumbent ledger. A full correctness gate alone is not an
-accepted performance result. Declare any explicit numerical/capability refusal.
+    --profile-evidence RELATIVE/REPORT.md
+Cake also supplies --cake-artifact RECEIPT for every executed emission. Evidence
+paths must exist BEFORE the call; a specific profile-skip-reason is allowed when
+justified. Run evaluate.py on the HOST, never inside GPU admission: it owns all
+GPU admissions. It freezes source, verifies emissions, performs full160 gate,
+then common complete-call wall timing (warmup10,30samples/direction, actual A/B
+and B/A, baseline A/A, mutation guard and source binding).
 
-Ranking is predeclared in protocol.json: after seed00, evaluate.py additionally
-measures the inherited parent against the proposed candidate on identical original
-inputs. Both comparisons use the same complete-call paired timer. A new promoted
-candidate must also exceed max(parent A/A drift,1%) on at least one cell without
-a material parent-relative regression. Rank by geometric mean across all16 UUIDs
-of CONSERVATIVE parent-relative min(forward_ratio,reverse_ratio). Keep the
-community-relative score as a separate metric, never change that denominator.
-Require at least one robust win and no material per-cell regression, using
-max(A/A drift,1%). Include the complete callable and all public dispatch cost.
-The frozen community baseline remains the denominator. The inherited winner,
-freshly evaluated as seed00, is the initial incumbent for this continuation.
-Do not time profiled durations, cache outputs or hide regressions in an average.
+Fresh replication ranks conservative community-relative geomean across all16
+UUIDs, requiring robust improvement >max(A/A drift,1%) and no material per-cell
+regression. Continuation additionally compares with the inherited parent on the
+SAME inputs using the SAME timer; it ranks parent-relative geomean and blocks
+material regression from both denominators. An unchanged seed is an initializer,
+not a newly optimized candidate. Public-shape fallback to immutable parent is
+allowed; include dispatch cost and dependency binding. Record time-to-first-full-
+correct and first improvement separately from best performance at3h.
 
-Record candidate order and one falsifiable hypothesis per mechanism change.
-After every accepted evaluation, update the incumbent if its canonical ranking
-improves. Reaching a first valid candidate or a first win DOES NOT END THE RUN.
-Continue distinct improvements, resource/tile/launch tuning and public dispatch
-until the fixed search window expires. Avoid duplicate settled evaluations;
-negative results prune that hypothesis, not the whole experiment. Record first
-full-correct and first robust-win elapsed time as secondary endpoints. Use your own prior evidence to avoid repeating work; this is continuation.
+Update STATUS/JOURNAL and commit candidate/Schedule/harness sources on this root's
+branch; do not push/merge or message other tasks. Checkpoints30/60/120/165/180
+come from immutable evaluation epochs. At last2minutes, finish.py derives
+ENDPOINT/DONE from the ledger; never author early DONE or change the checker.
+No after-budget edits get search credit. Independent common-HCU confirmation is
+post-budget and never additional search.
 
-At30,60,120 and165minutes record the best accepted candidate available at that
-time. These checkpoints are derived from immutable outcome completion times,
-not backfilled assertions. Preserve all successful and failed outcomes. The
-primary180minute endpoint is the highest ranked qualified candidate completed
-within the budget. The final15min permits CPU handoff, not new GPU jobs. No
-candidate discovery or editing after deadline gets credited to the3h endpoint.
-
-Before stop, commit authoring sources and write a factual README/JOURNAL. At the
-last2minutes, run python3 campaign/finish.py ONCE to derive ENDPOINT.json and
-DONE.json from the canonical accepted ledger. The flow also invokes it between
-turns if needed. Never author an early DONE or change the stopping checker.
-finish.py selects the best attained result; earlier successes remain checkpoints.
-Independent same-HCU comparison of the two frozen endpoints is a separate
-confirmation phase after budget, with no candidate edits or extra search credit.
-
-Write candidate sources in campaign/candidates and harnesses in campaign/tools,
-Schedules in campaign/schedules and emitted artifacts in campaign/generated.
-Update STATUS/JOURNAL and commit source/authoring artifacts on this arm's branch.
-Raw results/logs/dataset stay ignored. Do not push/merge or message other agents.
-
-The owner finalizer owns ENDPOINT.json and DONE.json. Accepted outcomes need a
-full original gate, canonical timing, source binding and executed Cake receipts.
-The owner independently replays Schedule->emission before accepting Cake results.
-If no new candidate beats seed00, retain seed00 and report no incremental gain.
-If seed00 initialization failed, retain the inherited seed as historical evidence
-and report the current measurement failure; do not invent a fresh gain. Search failures and
-provider/infrastructure faults are separate. Keep within-budget artifacts intact
-for common independent confirmation after freeze.
-
-The outer controller enforces a hard wall-clock timeout at the new3h deadline.
-Only pre-deadline evaluations receive search credit; CPU owner finalization and
-post-budget confirmation may finish afterward without any new model authoring.
-
-Public-shape fallback to the immutable inherited parent is allowed in both arms
-to retain its winning cells; include dispatch cost and record the parent source
-dependency. A better average cannot conceal a material regression from the parent.
-
-If seed00 is accepted and at least TWO genuinely NEW hypotheses have been tested
-or specifically refused with durable artifacts, you may write
-campaign/SEARCH-EXHAUSTED.json with a factual reason and new_hypothesis_evidence
-(list of at least two relative files from THIS continuation). This is an
-agent-reported limit, not proof of global optimality. The controller then holds
-the incumbent to the budget endpoint without repeated model calls. Do not use
-historical failed screens or hash checks as new hypothesis evidence.
+If at least two NEW structural hypotheses have real evidence and an accepted
+candidate/parent initialization exists, SEARCH-EXHAUSTED.json may name reason
+and new_hypothesis_evidence (>=2 relative files from THIS run). The controller
+holds the incumbent without repeated model calls. It is not a global optimum
+proof or permission to invent a result. Otherwise continue useful search.

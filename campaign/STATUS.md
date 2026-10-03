@@ -1,3 +1,3 @@
-# Continuation round2
+# Status
 
-Prepared; initialize inherited winner as seed00, then continue3h. Parent history is in campaign/prior.
+Prepared; no experiment started yet.

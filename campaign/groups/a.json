@@ -2,22 +2,17 @@
   "group": "a",
   "hcu": 1,
   "arm": "direct_triton",
-  "base_commit": "77a2848f95bd2a13fea0ce69dcc1147ccac39a93",
+  "experiment_kind": "fresh_replication",
+  "replicate": 1,
   "compiler_commit": "f09a3e859859e848f33a21b63412a306eea8738f",
-  "claim_scope": "exploratory_seeded_continuation",
-  "reference_access": "known_kernel_reproduction",
+  "protocol": "campaign/protocol.json",
   "tasks": [
     {
-      "id": "L1/069_rms_norm",
-      "baseline": "baselines/l1_069_vllm_aiter_fused.py",
-      "baseline_sha256": "1430ad1e28a40be334b795de13083caa537a03049d92b5148530b2bee63c7b60",
-      "smoke_uuid": "b6b63196-7f11-5b0d-969e-33e44f70975f"
+      "id": "L1/048_fused_gate_up_projection_with_swiglu",
+      "baseline": "baselines/l1_048_flaggems_gelu.py",
+      "baseline_sha256": "637a1479ff71bad1d312c6da5d6ca51452298f99d27b89b7c7f5a9325d3eabd8",
+      "smoke_uuid": "2f5ec70e-5498-5516-bf3f-20159665dcc8"
     }
   ],
-  "protocol": "campaign/protocol.json",
-  "parent": {
-    "root": "/data3/testuser01/experiments/bw1100-bench-cake-fixed3h-a-20261002",
-    "endpoint": "campaign/prior/ENDPOINT.json",
-    "seed_manifest": "campaign/prior/seed.json"
-  }
+  "reference_access": "known_kernel_reproduction"
 }

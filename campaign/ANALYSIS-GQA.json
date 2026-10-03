@@ -1,0 +1,26 @@
+{
+  "owner_analysis": "high-level shared diagnostic hypotheses, not candidate code",
+  "observed": [
+    "Current Cake chain reads attention-sized intermediates twice; direct fused chain avoids an intermediate.",
+    "Frozen gfx938 target does not admit cast and IR dtype vocabulary has no bool.",
+    "INT32 floor_div/remainder exist, but mixed INT32/FP32 elementwise arithmetic is not promoted; packed-mask view alone does not yield a float mask under the current target."
+  ],
+  "hypotheses": [
+    {
+      "id": "GQA-API-OUTDTYPE",
+      "status": "untested",
+      "question": "Can the pinned torch.bmm accept BF16 operands with out_dtype=float32 on this Hygon stack for the dprob product? This could preserve the FP32 intermediate while avoiding FP32 input casts. CPU schema inspection then a bounded device correctness/paired test is required; never round dprob to BF16 before the dropout/softmax chain."
+    },
+    {
+      "id": "GQA-CHAIN-FUSION",
+      "status": "untested_after_new_seed",
+      "question": "Can one full-row reduction plus epilogue Schedule fuse the two current chain stages within the64KiB/resource limits? Preserve original rounding, test odd/tail shapes and record refusals."
+    },
+    {
+      "id": "GQA-MASK-TRAFFIC",
+      "status": "untested",
+      "question": "Compare existing community native_dropout_backward/cast routes and zero-copy metadata transforms. CPU-assess any INT32-packed mask proposal before GPU; a required CAST refusal is a real limit, not permission to bypass Compiler."
+    }
+  ],
+  "precision_invariant": "BF16 input products may accumulate to FP32; dprob stays FP32 until original rounding. Do not change dtype/tolerance or drop mask/scaling."
+}

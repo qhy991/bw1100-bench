@@ -30,17 +30,23 @@ def main():
     args = parser.parse_args()
     if not re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,63}', args.id):
         parser.error('id must be a unique lowercase artifact name')
+    if not args.profile_evidence and not args.profile_skip_reason.strip():
+        parser.error('supply diagnostic evidence or a specific profiling skip reason before GPU evaluation')
+    for name in args.profile_evidence:
+        if not inside(ROOT, name).is_file():
+            parser.error('profile evidence does not exist: ' + name)
     os.chdir(str(ROOT))
     intake = json.loads((ROOT / 'campaign/intake.json').read_text())
     plan = json.loads((ROOT / intake['plan']).read_text())
     deadline = json.loads((ROOT / 'campaign/deadline.json').read_text())
-    seed = json.loads((ROOT / 'campaign/prior/seed.json').read_text()) if intake.get('round') == 2 else None
+    seed = json.loads((ROOT / intake['seed']).read_text()) if intake.get('seed') else None
     folder = ROOT / 'campaign/evaluations' / args.id
     folder.mkdir(parents=True, exist_ok=False)
     frozen = ROOT / 'campaign/candidates' / ('frozen_' + args.id + '.py')
     with frozen.open('x') as stream:
         stream.write(inside(ROOT, args.candidate).read_text())
     source_hash = digest(frozen)
+    is_initializer = bool(seed and source_hash == seed['source_sha256'])
     receipts = []
     artifact_bindings = {}
     if seed:
@@ -73,14 +79,14 @@ def main():
               ('latency', ['python3', 'campaign/paired_wall.py', '--candidate', source_in_device,
                  '--gate', relative(gate), '--output', relative(latency)])]
     parent_latency = folder / 'parent-latency.json'
-    if seed and args.id != 'seed00':
+    if seed and not is_initializer:
         stages.append(('parent-latency', ['python3', 'campaign/paired_wall.py',
             '--candidate', source_in_device, '--gate', relative(gate),
             '--baseline', '/work/' + seed['candidate_source'], '--output', relative(parent_latency)]))
     outcome = {'id': args.id, 'task': task, 'arm': plan['arm'], 'started_at_epoch': time.time(),
                'candidate_source': relative(frozen), 'source_sha256': source_hash,
                'status': 'not_qualified', 'cake_artifacts': args.cake_artifact,
-               'cake_artifact_bindings': artifact_bindings}
+               'cake_artifact_bindings': artifact_bindings, 'is_parent_initializer': is_initializer}
     try:
         for stage, command in stages:
             receipt = folder / (stage + '-admission.json')
@@ -115,7 +121,7 @@ def main():
                        speedup_min=min(ratios), speedup_max=max(ratios), handoff_row=row)
         if seed:
             outcome['incremental_conservative_geomean'] = 1.0
-            if args.id != 'seed00':
+            if not is_initializer:
                 parent_plan = copy.deepcopy(plan)
                 parent_plan['tasks'][0]['baseline'] = seed['candidate_source']
                 parent_plan['tasks'][0]['baseline_sha256'] = seed['source_sha256']

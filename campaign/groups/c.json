@@ -2,10 +2,10 @@
   "group": "c",
   "hcu": 3,
   "arm": "cake_ir",
-  "base_commit": "77a2848f95bd2a13fea0ce69dcc1147ccac39a93",
+  "experiment_kind": "fresh_replication",
+  "replicate": 2,
   "compiler_commit": "f09a3e859859e848f33a21b63412a306eea8738f",
-  "claim_scope": "exploratory_seeded_continuation",
-  "reference_access": "known_kernel_reproduction",
+  "protocol": "campaign/protocol.json",
   "tasks": [
     {
       "id": "L1/048_fused_gate_up_projection_with_swiglu",
@@ -14,10 +14,5 @@
       "smoke_uuid": "2f5ec70e-5498-5516-bf3f-20159665dcc8"
     }
   ],
-  "protocol": "campaign/protocol.json",
-  "parent": {
-    "root": "/data3/testuser01/experiments/bw1100-bench-cake-fixed3h-c-20261002",
-    "endpoint": "campaign/prior/ENDPOINT.json",
-    "seed_manifest": "campaign/prior/seed.json"
-  }
+  "reference_access": "known_kernel_reproduction"
 }
