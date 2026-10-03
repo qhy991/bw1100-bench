@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 import math
+import copy
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -33,6 +34,7 @@ def main():
     intake = json.loads((ROOT / 'campaign/intake.json').read_text())
     plan = json.loads((ROOT / intake['plan']).read_text())
     deadline = json.loads((ROOT / 'campaign/deadline.json').read_text())
+    seed = json.loads((ROOT / 'campaign/prior/seed.json').read_text()) if intake.get('round') == 2 else None
     folder = ROOT / 'campaign/evaluations' / args.id
     folder.mkdir(parents=True, exist_ok=False)
     frozen = ROOT / 'campaign/candidates' / ('frozen_' + args.id + '.py')
@@ -41,6 +43,11 @@ def main():
     source_hash = digest(frozen)
     receipts = []
     artifact_bindings = {}
+    if seed:
+        parent_source = inside(ROOT, seed['candidate_source'])
+        if digest(parent_source) != seed['source_sha256']:
+            raise ValueError('inherited parent changed')
+        artifact_bindings[seed['candidate_source']] = seed['source_sha256']
     for name in args.cake_artifact:
         record = json.loads(inside(ROOT, name).read_text())
         for path in (name, record['source'], record['schedule']):
@@ -65,6 +72,11 @@ def main():
                  '--workloads', 'all', '--rounds', '10', '--output', relative(gate)]),
               ('latency', ['python3', 'campaign/paired_wall.py', '--candidate', source_in_device,
                  '--gate', relative(gate), '--output', relative(latency)])]
+    parent_latency = folder / 'parent-latency.json'
+    if seed and args.id != 'seed00':
+        stages.append(('parent-latency', ['python3', 'campaign/paired_wall.py',
+            '--candidate', source_in_device, '--gate', relative(gate),
+            '--baseline', '/work/' + seed['candidate_source'], '--output', relative(parent_latency)]))
     outcome = {'id': args.id, 'task': task, 'arm': plan['arm'], 'started_at_epoch': time.time(),
                'candidate_source': relative(frozen), 'source_sha256': source_hash,
                'status': 'not_qualified', 'cake_artifacts': args.cake_artifact,
@@ -101,7 +113,21 @@ def main():
                       for k in ('forward_median', 'reverse_median')) for c in timing['rows']]
         outcome.update(status='accepted', conservative_geomean=math.exp(sum(map(math.log, ratios))/len(ratios)),
                        speedup_min=min(ratios), speedup_max=max(ratios), handoff_row=row)
+        if seed:
+            outcome['incremental_conservative_geomean'] = 1.0
+            if args.id != 'seed00':
+                parent_plan = copy.deepcopy(plan)
+                parent_plan['tasks'][0]['baseline'] = seed['candidate_source']
+                parent_plan['tasks'][0]['baseline_sha256'] = seed['source_sha256']
+                parent_row = dict(row, latency_report=relative(parent_latency))
+                validate(ROOT, {'tasks': [parent_row]}, parent_plan)
+                parent_data = json.loads(parent_latency.read_text())
+                parent_ratios = [min(c['baseline_us'][k]/c['candidate_us'][k]
+                                    for k in ('forward_median', 'reverse_median')) for c in parent_data['rows']]
+                outcome['incremental_conservative_geomean'] = math.exp(sum(map(math.log,parent_ratios))/len(parent_ratios))
+                outcome['parent_latency_report'] = relative(parent_latency)
     except (ValueError, OSError, subprocess.SubprocessError) as error:
+        outcome['status'] = 'not_qualified'
         outcome['reason'] = str(error)
     outcome.update(completed_at_epoch=time.time(), admission_receipts=receipts)
     with (folder / 'outcome.json').open('x') as stream:

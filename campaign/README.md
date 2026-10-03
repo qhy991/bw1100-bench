@@ -24,7 +24,10 @@ part of bw1100-bench's normal import/runtime path. The original bench main and
 previous experiments retain their independence. Neither Compiler nor installed
 Ralph flow is modified. This is not a canonical Open-Cake Lab Campaign.
 
-Primary endpoint: best qualified conservative geomean speedup found within3h.
+Primary endpoint: best qualified conservative geomean speedup OVER THE INHERITED
+PARENT after another3h. Community-relative performance is reported separately.
+The evaluator uses the identical timer for both comparisons and blocks material
+regression from either denominator.
 Both arms may improve an incumbent throughout the same fixed search window.
 Time-to-first-correct/first-win and the30/60/120/165/180minute best-performance
 trajectory are secondary. protocol.json owns endpoint/ranking/stopping policy.

@@ -32,11 +32,15 @@ def main():
     parser.add_argument('--gate', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--samples', type=int, default=30)
+    parser.add_argument('--baseline', type=Path, help='explicit parent comparison; default remains community denominator')
     args = parser.parse_args()
     intake = json.loads((ROOT / 'campaign/intake.json').read_text())
     plan = json.loads((ROOT / intake['plan']).read_text())
     task_id = plan['tasks'][0]['id']
     baseline_path = ROOT / plan['tasks'][0]['baseline']
+    if args.baseline:
+        baseline_path = args.baseline.resolve()
+        baseline_path.relative_to(ROOT)
     sha = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
     gate = json.loads(args.gate.read_text())
     if not (gate.get('full_device_correctness') and gate['status'] == 'passed' and gate['task'] == task_id):
@@ -100,4 +104,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

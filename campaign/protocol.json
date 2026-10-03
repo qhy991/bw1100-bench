@@ -9,7 +9,7 @@
     165,
     180
   ],
-  "primary_endpoint": "best_qualified_performance_after_additional3h_from_own_parent_seed",
+  "primary_endpoint": "best_qualified_parent_relative_geomean_after_additional3h",
   "secondary_endpoints": [
     "time_to_first_full_correct_candidate",
     "time_to_first_robust_win",
@@ -25,5 +25,6 @@
   "parent_search_hours": 3,
   "initial_incumbent": "own_parent_frozen_best",
   "reference_access": "own_parent_history_only",
-  "outer_wall_timeout": true
+  "outer_wall_timeout": true,
+  "parent_regression_policy": "same_AA_or1percent_per_cell_gate_as_community_comparison"
 }

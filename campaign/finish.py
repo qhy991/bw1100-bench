@@ -24,14 +24,17 @@ for d in outcomes:
         stale.append(d['id'])
         continue
     accepted.append(d)
-best = max(accepted, key=lambda d: d['conservative_geomean']) if accepted else None
+ranking = lambda d: d.get('incremental_conservative_geomean', d['conservative_geomean']) if intake.get('round') == 2 else d['conservative_geomean']
+best = max(accepted, key=ranking) if accepted else None
 curve = []
 for minute in protocol['checkpoint_minutes']:
     available = [d for d in accepted if d['completed_at_epoch'] <= deadline['started_at_epoch'] + minute*60]
-    champion = max(available, key=lambda d: d['conservative_geomean']) if available else None
+    champion = max(available, key=ranking) if available else None
     curve.append({'minute': minute, 'best_qualified_id': champion['id'] if champion else None,
                   'speedup': champion['conservative_geomean'] if champion else 1.0,
                   'baseline_only': champion is None})
+    if intake.get('round') == 2:
+        curve[-1]['incremental_over_parent'] = ranking(champion) if champion else None
 endpoint = {'arm': plan['arm'], 'task': plan['tasks'][0]['id'], 'protocol': intake['protocol'],
             'budget_hours': protocol['budget_hours'], 'evaluations': len(outcomes),
             'accepted_candidates': len(accepted), 'best_id': best['id'] if best else None,
@@ -48,6 +51,7 @@ if intake.get('round') == 2:
     endpoint['seed00_speedup'] = seed['conservative_geomean'] if seed else None
     endpoint['best_over_seed_score_ratio'] = best['conservative_geomean']/seed['conservative_geomean'] if best and seed else None
     endpoint['incremental_gain_requires_confirmation'] = True
+    endpoint['best_parent_relative_geomean'] = ranking(best) if best else None
 with (ROOT / 'campaign/ENDPOINT.json').open('x') as stream:
     json.dump(endpoint, stream, indent=2)
     stream.write('\n')

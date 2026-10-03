@@ -131,8 +131,13 @@ A/A and source binding. It writes campaign/evaluations/ID/outcome.json. Only sta
 accepted can enter the incumbent ledger. A full correctness gate alone is not an
 accepted performance result. Declare any explicit numerical/capability refusal.
 
-Ranking is predeclared in protocol.json: geometric mean across all16 original
-UUIDs of the CONSERVATIVE directional speedup min(forward_ratio,reverse_ratio).
+Ranking is predeclared in protocol.json: after seed00, evaluate.py additionally
+measures the inherited parent against the proposed candidate on identical original
+inputs. Both comparisons use the same complete-call paired timer. A new promoted
+candidate must also exceed max(parent A/A drift,1%) on at least one cell without
+a material parent-relative regression. Rank by geometric mean across all16 UUIDs
+of CONSERVATIVE parent-relative min(forward_ratio,reverse_ratio). Keep the
+community-relative score as a separate metric, never change that denominator.
 Require at least one robust win and no material per-cell regression, using
 max(A/A drift,1%). Include the complete callable and all public dispatch cost.
 The frozen community baseline remains the denominator. The inherited winner,
@@ -179,3 +184,7 @@ for common independent confirmation after freeze.
 The outer controller enforces a hard wall-clock timeout at the new3h deadline.
 Only pre-deadline evaluations receive search credit; CPU owner finalization and
 post-budget confirmation may finish afterward without any new model authoring.
+
+Public-shape fallback to the immutable inherited parent is allowed in both arms
+to retain its winning cells; include dispatch cost and record the parent source
+dependency. A better average cannot conceal a material regression from the parent.
