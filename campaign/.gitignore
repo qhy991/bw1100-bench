@@ -8,3 +8,4 @@ exit-code
 evaluations/
 ENDPOINT.json
 __pycache__/
+controller-status.json

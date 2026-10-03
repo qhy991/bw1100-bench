@@ -9,7 +9,7 @@
     165,
     180
   ],
-  "primary_endpoint": "best_qualified_conservative_geomean_speedup_attained_within_budget",
+  "primary_endpoint": "best_qualified_performance_after_additional3h_from_own_parent_seed",
   "secondary_endpoints": [
     "time_to_first_full_correct_candidate",
     "time_to_first_robust_win",
@@ -19,6 +19,11 @@
   "minimum_materiality": 0.01,
   "stop_at_first_win": false,
   "replicates_per_arm_task": 1,
-  "claim_scope": "exploratory_matched_budget_comparison",
-  "post_budget_confirmation": "separate_common_timer_remeasurement_on_same_HCU_without_candidate_edits"
+  "claim_scope": "exploratory_seeded_continuation",
+  "post_budget_confirmation": "same_HCU_round2_direct_vs_Cake_and_parent_vs_round2_without_source_edits",
+  "round": 2,
+  "parent_search_hours": 3,
+  "initial_incumbent": "own_parent_frozen_best",
+  "reference_access": "own_parent_history_only",
+  "outer_wall_timeout": true
 }

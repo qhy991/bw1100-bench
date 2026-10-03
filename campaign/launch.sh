@@ -27,10 +27,27 @@ bash scripts/dtk.sh cpu "$image" /usr/bin/timeout -k 10s 180s python3 campaign/c
 python3 campaign/prepare.py "$group"
 test ! -e campaign/logs/ralph.log
 test ! -e campaign/exit-code
+remaining=$(python3 -c 'import json,time; print(max(1,int(json.load(open("campaign/deadline.json"))["stop_at_epoch"]-time.time())))')
 set +e
-hmz exec -f campaign/ralph_flow.py -a claude/glm-5.3:high -c campaign/budget-3h.yaml \
+/usr/bin/timeout --signal=TERM --kill-after=15s "${remaining}s" \
+  hmz exec -f campaign/ralph_flow.py -a claude/glm-5.3:high -c campaign/budget-3h.yaml \
   "$profile_instruction"$'\n\n'"$(cat campaign/TASK.md)" > campaign/logs/ralph.log 2>&1
 code=$?
 set -e
 printf '%s\n' "$code" > campaign/exit-code
+if [[ $code == 124 || $code == 137 ]]; then
+  python3 campaign/deadline_cleanup.py > campaign/logs/deadline-cleanup.log 2>&1
+  if [[ ! -e campaign/DONE.json ]]; then
+    python3 campaign/finish.py > campaign/logs/owner-finalization.log 2>&1
+  fi
+fi
+python3 - "$code" <<'PY'
+import json,sys,time
+from pathlib import Path
+code=int(sys.argv[1])
+with Path('campaign/controller-status.json').open('x') as stream:
+    json.dump({'exit_code':code,'budget_timeout':code in (124,137),
+               'done_exists':Path('campaign/DONE.json').exists(),
+               'owner_finalized_at_epoch':time.time()},stream,indent=2)
+PY
 exit "$code"

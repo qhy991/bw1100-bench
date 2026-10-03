@@ -1,3 +1,3 @@
-# Fixed3h best-result comparison
+# Continuation round2
 
-Prepared; protocol and intake own the endpoint, arm and deadline. No first-win early stop.
+Prepared; initialize inherited winner as seed00, then continue3h. Parent history is in campaign/prior.

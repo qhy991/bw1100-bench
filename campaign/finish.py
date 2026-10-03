@@ -41,6 +41,13 @@ endpoint = {'arm': plan['arm'], 'task': plan['tasks'][0]['id'], 'protocol': inta
 correct_times = [d['correctness_completed_at_epoch'] for d in outcomes if 'correctness_completed_at_epoch' in d]
 endpoint['first_full_correct_seconds'] = min(correct_times)-deadline['started_at_epoch'] if correct_times else None
 endpoint['first_robust_win_seconds'] = min(d['completed_at_epoch'] for d in accepted)-deadline['started_at_epoch'] if accepted else None
+seed = next((d for d in accepted if d['id'] == 'seed00'), None)
+if intake.get('round') == 2:
+    endpoint['round'] = 2
+    endpoint['parent'] = intake['parent']
+    endpoint['seed00_speedup'] = seed['conservative_geomean'] if seed else None
+    endpoint['best_over_seed_score_ratio'] = best['conservative_geomean']/seed['conservative_geomean'] if best and seed else None
+    endpoint['incremental_gain_requires_confirmation'] = True
 with (ROOT / 'campaign/ENDPOINT.json').open('x') as stream:
     json.dump(endpoint, stream, indent=2)
     stream.write('\n')

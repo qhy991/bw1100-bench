@@ -1,3 +1,3 @@
-# Journal
+# Continuation journal
 
-Fresh successors after the user clarified the fixed3h best-performance endpoint. Earlier first-win pilots were cancelled and are excluded from this comparison. Owner prepared the common evaluator; Ralph owns all candidates.
+The user authorized another3h on top of the previous experiment. Owner prepared controls; Ralph owns all new candidate optimizations. Preserve the parent and record incremental gains.
