@@ -3,6 +3,7 @@
 import argparse
 import fcntl
 import json
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -12,6 +13,35 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK_DIR = Path.home() / '.local/state/bw1100-bench'
+
+
+def _check_latest_start(latest_start_epoch):
+    if latest_start_epoch is not None and time.time() >= latest_start_epoch:
+        raise RuntimeError('GPU admission window expired before device execution')
+
+
+def _acquire_hcu_lock(fd, queue_timeout, latest_start_epoch=None):
+    """Bounded waiting on the existing per-user lock; no second allocator.
+
+    This serializes only callers that use the same lock. It is not FIFO or
+    physical exclusivity against other users. The default preserves fail-fast.
+    """
+    started = time.monotonic() if queue_timeout else None
+    while True:
+        _check_latest_start(latest_start_epoch)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            if not queue_timeout:
+                raise RuntimeError('another local bw1100-bench job holds this HCU lock')
+            remaining = queue_timeout - (time.monotonic() - started)
+            if latest_start_epoch is not None:
+                remaining = min(remaining, latest_start_epoch - time.time())
+            if remaining <= 0:
+                raise RuntimeError('timed out waiting for this HCU lock; no GPU admitted')
+            time.sleep(min(0.1, remaining))
+        else:
+            return time.monotonic() - started if started is not None else 0.0
 
 
 def _vram(device):
@@ -69,20 +99,26 @@ def main():
     parser.add_argument('--device', required=True, type=int)
     parser.add_argument('--receipt', required=True)
     parser.add_argument('--timeout', type=int, default=180)
+    parser.add_argument('--queue-timeout', type=int, default=0,
+                        help='wait up to this many seconds for the existing HCU lock (0 fails fast)')
+    parser.add_argument('--latest-start-epoch', type=float,
+                        help='refuse device execution at/after this task-owned node deadline')
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command[1:] if args.command and args.command[0] == '--' else args.command
     if not command or args.device < 0 or not 10 <= args.timeout <= 3600:
         parser.error('command, nonnegative HCU id and timeout 10..3600 required')
+    if not 0 <= args.queue_timeout <= 3600:
+        parser.error('queue timeout must be in 0..3600 seconds')
+    if args.latest_start_epoch is not None and (
+            not math.isfinite(args.latest_start_epoch) or args.latest_start_epoch <= 0):
+        parser.error('latest start epoch must be finite and positive')
     receipt, terminal = _receipt_paths(args.receipt)
     LOCK_DIR.mkdir(parents=True, exist_ok=True)
     lock_path = LOCK_DIR / ('hcu-%d.lock' % args.device)
     fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o600)
     try:
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise RuntimeError('another local bw1100-bench job holds this HCU lock')
+        queue_wait_seconds = _acquire_hcu_lock(fd, args.queue_timeout, args.latest_start_epoch)
         image_id = subprocess.check_output(
             ['docker', 'image', 'inspect', args.image, '--format', '{{.Id}}'],
             universal_newlines=True, timeout=15).strip()
@@ -90,6 +126,8 @@ def main():
         before_kfd = _kfd_visible()
         if before_vram != '0%' or before_kfd:
             raise RuntimeError('selected HCU is not idle by observed VRAM/KFD check')
+        # Device/image probes may consume the remaining admission window too.
+        _check_latest_start(args.latest_start_epoch)
         job_id = 'bw-' + uuid.uuid4().hex[:12]
         started = time.time()
         reserve = min(30, max(2, args.timeout // 3))
@@ -108,6 +146,9 @@ def main():
             'command': command,
             'timeout_s': args.timeout,
             'container_timeout_s': child_timeout,
+            'queue_timeout_s': args.queue_timeout,
+            'queue_wait_s': queue_wait_seconds,
+            'latest_start_epoch': args.latest_start_epoch,
             'started_at': started,
         }
         _write_new(receipt, admission)

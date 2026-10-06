@@ -22,9 +22,13 @@ case "$mode" in
     receipt=${1:?usage: dtk.sh gpu IMAGE RECEIPT COMMAND [ARGS...]}
     shift
     (( $# > 0 )) || { printf 'A GPU command is required\n' >&2; exit 2; }
-    exec python3 "$root/scripts/hcu_run.py" --image "$image" \
-      --device "$HIP_VISIBLE_DEVICES" --receipt "$receipt" \
-      --timeout "${BWBENCH_TIMEOUT:-180}" -- "$@"
+    gpu_args=(--image "$image" --device "$HIP_VISIBLE_DEVICES" --receipt "$receipt"
+              --timeout "${BWBENCH_TIMEOUT:-180}"
+              --queue-timeout "${BWBENCH_QUEUE_TIMEOUT:-0}")
+    if [[ -n ${BWBENCH_LATEST_START_EPOCH:-} ]]; then
+      gpu_args+=(--latest-start-epoch "$BWBENCH_LATEST_START_EPOCH")
+    fi
+    exec python3 "$root/scripts/hcu_run.py" "${gpu_args[@]}" -- "$@"
     ;;
   *) printf 'Unknown mode: %s\n' "$mode" >&2; exit 2 ;;
 esac
