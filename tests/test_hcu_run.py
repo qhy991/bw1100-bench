@@ -82,6 +82,7 @@ class HcuRunTests(unittest.TestCase):
             with mock.patch.object(hcu_run, 'ROOT', root), \
                  mock.patch.object(hcu_run, 'LOCK_DIR', root / '.locks'), \
                  mock.patch.object(sys, 'argv', argv), \
+                 mock.patch.object(hcu_run, '_runtime_binding', return_value={'dcu_index': 0}), \
                  mock.patch.object(hcu_run.subprocess, 'check_output', side_effect=output), \
                  mock.patch.object(hcu_run.subprocess, 'run', side_effect=run), \
                  mock.patch.object(hcu_run.time, 'sleep'), \
@@ -102,6 +103,77 @@ class HcuRunTests(unittest.TestCase):
             vram, kfd, live, observations = hcu_run._observe_release(2, 'owned-job', 0)
         self.assertEqual((vram, kfd, live), ('0%', False, False))
         self.assertEqual([row['vram'] for row in observations], ['32%', '0%'])
+
+    def test_runtime_selector_joins_pci_instead_of_reusing_hcu_ordinal(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'renderD131').mkdir()
+            (root / 'renderD131/device').symlink_to(root / '0000:05:00.0')
+            bus = 'HCU[3] : PCI Bus: 0000:05:00.0 --> SN: observed'
+            inventory = '0 0x45C75489238C7 /dev/dri/renderD131\n'
+            binding = hcu_run._select_runtime_device(3, bus, inventory, root)
+            self.assertEqual(binding['dcu_index'], 0)
+            self.assertEqual(binding['pci_bus_id'], '0000:05:00.0')
+            with self.assertRaisesRegex(RuntimeError, 'does not uniquely match'):
+                hcu_run._select_runtime_device(3, bus, '', root)
+
+    def test_direct_profiler_runtime_error_is_distinct_from_candidate_error(self):
+        self.assertEqual(hcu_run._runtime_error_marker('RuntimeError: No CUDA GPUs are available'),
+                         'no cuda gpus are available')
+        self.assertEqual(hcu_run._runtime_error_marker('RuntimeError: 0 active drivers ([])'),
+                         '0 active drivers')
+        self.assertEqual(hcu_run._runtime_error_marker('hsa_init failed: HSA_STATUS_ERROR_OUT_OF_RESOURCES'),
+                         'hsa_status_error_out_of_resources')
+        self.assertIsNone(hcu_run._runtime_error_marker('OutOfResources: shared memory required 98304'))
+
+    def test_binding_failure_stops_before_admission(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stop = root / 'STOP.json'
+            argv = ['hcu_run.py', '--image', 'image', '--device', '1',
+                    '--receipt', 'results/job.json', '--', 'true']
+            with mock.patch.object(hcu_run, 'ROOT', root), \
+                 mock.patch.object(hcu_run, 'LOCK_DIR', root / '.locks'), \
+                 mock.patch.dict(hcu_run.os.environ, {'BWBENCH_STOP_FILE': str(stop)}), \
+                 mock.patch.object(sys, 'argv', argv), \
+                 mock.patch.object(hcu_run.subprocess, 'check_output', return_value='sha256:pinned'), \
+                 mock.patch.object(hcu_run, '_vram', return_value='0%'), \
+                 mock.patch.object(hcu_run, '_kfd_visible', return_value=False), \
+                 mock.patch.object(hcu_run, '_runtime_binding', side_effect=RuntimeError('missing PCI')):
+                with self.assertRaisesRegex(RuntimeError, 'missing PCI'):
+                    hcu_run.main()
+            self.assertTrue(stop.exists())
+            self.assertFalse((root / 'results/job.json').exists())
+
+    def test_release_observer_denial_writes_unknown_terminal_and_stops_queue(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            stop = root / 'STOP.json'
+            argv = ['hcu_run.py', '--image', 'image', '--device', '1',
+                    '--receipt', 'results/job.json', '--', 'true']
+            with mock.patch.object(hcu_run, 'ROOT', root), \
+                 mock.patch.object(hcu_run, 'LOCK_DIR', root / '.locks'), \
+                 mock.patch.dict(hcu_run.os.environ, {'BWBENCH_STOP_FILE': str(stop)}), \
+                 mock.patch.object(sys, 'argv', argv), \
+                 mock.patch.object(hcu_run.subprocess, 'check_output', return_value='sha256:pinned'), \
+                 mock.patch.object(hcu_run.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)) as run, \
+                 mock.patch.object(hcu_run, '_vram', return_value='0%'), \
+                 mock.patch.object(hcu_run, '_kfd_visible', return_value=False), \
+                 mock.patch.object(hcu_run, '_runtime_binding', return_value={'dcu_index': 1}), \
+                 mock.patch.object(hcu_run, '_observe_release', side_effect=PermissionError('docker.sock')), \
+                 mock.patch.object(hcu_run.time, 'sleep'):
+                self.assertEqual(hcu_run.main(), 75)
+                command = run.call_args.args[0]
+                self.assertIn('DCU_VISIBLE_DEVICES=1', command)
+                self.assertNotIn('--privileged', command)
+                self.assertNotIn('DCU_CREATOR', ' '.join(command))
+                with self.assertRaisesRegex(RuntimeError, 'stopped new GPU'):
+                    hcu_run.main()
+            terminal = json.loads((root / 'results/job-terminal.json').read_text())
+            self.assertEqual(terminal['status'], 'not_qualified')
+            self.assertIsNone(terminal['after_kfd_visible'])
+            self.assertIsNone(terminal['container_still_running'])
+            self.assertTrue(stop.exists())
 
 
 if __name__ == '__main__':

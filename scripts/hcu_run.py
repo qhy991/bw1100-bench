@@ -6,6 +6,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import time
@@ -13,6 +14,57 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK_DIR = Path.home() / '.local/state/bw1100-bench'
+
+
+def _check_stop():
+    name = os.environ.get('BWBENCH_STOP_FILE')
+    if name and Path(name).exists():
+        raise RuntimeError('experiment owner stopped new GPU admissions')
+
+
+def _stop_for_unknown_release(job_id, reason):
+    name = os.environ.get('BWBENCH_STOP_FILE')
+    if name:
+        try:
+            _write_new(Path(name), {'job_id': job_id, 'reason': reason,
+                                    'node_epoch': time.time()})
+        except FileExistsError:
+            pass
+
+
+def _runtime_error_marker(output):
+    text = (output or '').lower()
+    markers = ('no cuda gpus are available', 'no hip gpus are available',
+               '0 active drivers', 'no valid dcus', 'dcus as they are invalid',
+               'cannot connect to the docker daemon', 'docker.sock: connect: permission denied',
+               'hcu.sock: connect: permission denied', 'hsa_status_error_out_of_resources')
+    return next((marker for marker in markers if marker in text), None)
+
+
+def _select_runtime_device(device, bus_output, inventory, drm_root=Path('/sys/class/drm')):
+    """Join the two installed inventories by PCI, never by their ordinal."""
+    buses = re.findall(r'HCU\[(\d+)\].*?PCI Bus:\s*([0-9a-fA-F:.]+)', bus_output)
+    matches = [pci.lower() for index, pci in buses if int(index) == device]
+    if len(matches) != 1:
+        raise RuntimeError('selected HCU has no unique physical PCI binding')
+    candidates = []
+    for index, unique_id, render in re.findall(
+            r'^\s*(\d+)\s+(0x[0-9a-fA-F]+)\s+/dev/dri/(renderD\d+)\s*$',
+            inventory, re.MULTILINE):
+        pci = (drm_root / render / 'device').resolve().name.lower()
+        if pci == matches[0]:
+            candidates.append({'runtime': 'dcu', 'dcu_index': int(index),
+                               'pci_bus_id': pci, 'dcu_unique_id': unique_id,
+                               'render_node': '/dev/dri/' + render})
+    if len(candidates) != 1:
+        raise RuntimeError('DCU runtime inventory does not uniquely match selected physical HCU')
+    return candidates[0]
+
+
+def _runtime_binding(device):
+    bus = subprocess.check_output(['hy-smi', '--showbus'], universal_newlines=True, timeout=15)
+    inventory = subprocess.check_output(['dcu-ctk', 'dcu', 'list'], universal_newlines=True, timeout=15)
+    return _select_runtime_device(device, bus, inventory)
 
 
 def _check_latest_start(latest_start_epoch):
@@ -28,6 +80,7 @@ def _acquire_hcu_lock(fd, queue_timeout, latest_start_epoch=None):
     """
     started = time.monotonic() if queue_timeout else None
     while True:
+        _check_stop()
         _check_latest_start(latest_start_epoch)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -41,6 +94,7 @@ def _acquire_hcu_lock(fd, queue_timeout, latest_start_epoch=None):
                 raise RuntimeError('timed out waiting for this HCU lock; no GPU admitted')
             time.sleep(min(0.1, remaining))
         else:
+            _check_stop()
             return time.monotonic() - started if started is not None else 0.0
 
 
@@ -113,21 +167,33 @@ def main():
     if args.latest_start_epoch is not None and (
             not math.isfinite(args.latest_start_epoch) or args.latest_start_epoch <= 0):
         parser.error('latest start epoch must be finite and positive')
+    _check_stop()
     receipt, terminal = _receipt_paths(args.receipt)
     LOCK_DIR.mkdir(parents=True, exist_ok=True)
     lock_path = LOCK_DIR / ('hcu-%d.lock' % args.device)
     fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o600)
     try:
         queue_wait_seconds = _acquire_hcu_lock(fd, args.queue_timeout, args.latest_start_epoch)
-        image_id = subprocess.check_output(
-            ['docker', 'image', 'inspect', args.image, '--format', '{{.Id}}'],
-            universal_newlines=True, timeout=15).strip()
-        before_vram = _vram(args.device)
-        before_kfd = _kfd_visible()
+        try:
+            image_id = subprocess.check_output(
+                ['docker', 'image', 'inspect', args.image, '--format', '{{.Id}}'],
+                universal_newlines=True, timeout=15).strip()
+            before_vram = _vram(args.device)
+            before_kfd = _kfd_visible()
+        except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+            _stop_for_unknown_release(None, 'pre_admission_observation_failed: ' + str(error))
+            raise
         if before_vram != '0%' or before_kfd:
             raise RuntimeError('selected HCU is not idle by observed VRAM/KFD check')
         # Device/image probes may consume the remaining admission window too.
         _check_latest_start(args.latest_start_epoch)
+        try:
+            binding = _runtime_binding(args.device)
+        except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+            _stop_for_unknown_release(None, 'physical_device_binding_failed: ' + str(error))
+            raise
+        _check_latest_start(args.latest_start_epoch)
+        _check_stop()
         job_id = 'bw-' + uuid.uuid4().hex[:12]
         started = time.time()
         reserve = min(30, max(2, args.timeout // 3))
@@ -140,6 +206,7 @@ def main():
             'external_gpu_activity': 'not_excluded',
             'physical_exclusivity': False,
             'selected_hcu': args.device,
+            'runtime_device_binding': binding,
             'image_id': image_id,
             'before_vram': before_vram,
             'before_kfd_visible': before_kfd,
@@ -166,34 +233,56 @@ def main():
             '-w', '/work', '-e', 'PYTHONDONTWRITEBYTECODE=1',
             '-e', 'HOME=/tmp',
             '-e', 'HIP_VISIBLE_DEVICES=%d' % args.device,
-            '--runtime', 'dtk', '--privileged',
-            '--device', '/dev/kfd', '--device', '/dev/dri', '--device', '/dev/mkfd',
+            '-e', 'DCU_VISIBLE_DEVICES=%d' % binding['dcu_index'],
+            '--runtime', 'dcu',
             '--entrypoint', 'bash', image_id,
             '-c', bootstrap,
             'bash', str(child_timeout),
         ] + command
+        output = ''
         try:
-            child = subprocess.run(docker_command, timeout=args.timeout, check=False)
+            child = subprocess.run(docker_command, timeout=args.timeout, check=False,
+                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                   universal_newlines=True)
+            output = child.stdout or ''
             exit_code = child.returncode
             reason = ('normal_exit' if exit_code == 0 else
                       'container_timeout_or_exit_124' if exit_code == 124 else
                       'nonzero_exit')
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as error:
+            output = error.output or ''
+            if isinstance(output, bytes):
+                output = output.decode(errors='replace')
             exit_code, reason = 124, 'timeout_check_container_state'
+        except OSError as error:
+            exit_code, reason = 127, 'container_launch_error: ' + str(error)
+        if output:
+            print(output, end='' if output.endswith('\n') else '\n', flush=True)
+        runtime_error = _runtime_error_marker(output) if exit_code else None
         time.sleep(1)
-        after_vram, after_kfd, container_live, release_observations = _observe_release(
-            args.device, job_id, exit_code)
+        try:
+            after_vram, after_kfd, container_live, release_observations = _observe_release(
+                args.device, job_id, exit_code)
+        except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+            after_vram, after_kfd, container_live = None, None, None
+            reason = 'release_observation_failed'
+            release_observations = [{'error': type(error).__name__, 'detail': str(error)[:500]}]
         terminal_doc = dict(admission)
         terminal_doc.update(
             exit_code=exit_code, reason=reason,
+            runtime_error_marker=runtime_error,
             after_vram=after_vram, after_kfd_visible=after_kfd,
             container_still_running=container_live,
             release_observations=release_observations,
             completed_at=time.time(),
             status=('completed' if exit_code == 0 and after_vram == '0%'
-                    and not after_kfd and not container_live else 'not_qualified'),
+                    and after_kfd is False and container_live is False else 'not_qualified'),
         )
         _write_new(terminal, terminal_doc)
+        if after_vram != '0%' or after_kfd is not False or container_live is not False:
+            _stop_for_unknown_release(job_id, 'device_release_not_confirmed: ' + reason)
+        elif runtime_error:
+            _stop_for_unknown_release(job_id, 'runtime_execution_failed: ' + runtime_error)
         print(json.dumps({'job_id': job_id, 'status': terminal_doc['status'],
                           'exit_code': exit_code}), flush=True)
         return 0 if terminal_doc['status'] == 'completed' else exit_code or 75

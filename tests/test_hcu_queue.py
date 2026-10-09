@@ -14,14 +14,17 @@ MODULE=Path(__file__).resolve().parents[1]/'scripts/hcu_run.py'
 spec=importlib.util.spec_from_file_location('queue_hcu',str(MODULE))
 hcu=importlib.util.module_from_spec(spec);spec.loader.exec_module(hcu)
 
-WORKER='''import importlib.util,json,os,sys,time
+WORKER='''import importlib.util,json,os,select,sys,time
 s=importlib.util.spec_from_file_location('hcu',sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m)
 fd=os.open(sys.argv[2],os.O_CREAT|os.O_RDWR,0o600)
 try:
  wait=m._acquire_hcu_lock(fd,float(sys.argv[4]))
  started=time.monotonic()
  with open(sys.argv[3]+'.acquired','w') as f:json.dump({'started':started,'wait':wait},f)
- time.sleep(float(sys.argv[5]))
+ if sys.argv[5]=='release':
+  if not select.select([sys.stdin],[],[],15)[0]:raise RuntimeError('holder release handshake timed out')
+  if sys.stdin.readline()!='release\\n':raise RuntimeError('holder release handshake was not received')
+ else:time.sleep(float(sys.argv[5]))
  finished=time.monotonic()
  with open(sys.argv[3]+'.finished','w') as f:json.dump({'started':started,'finished':finished,'wait':wait},f)
 finally:os.close(fd)
@@ -29,7 +32,7 @@ finally:os.close(fd)
 
 class HcuQueueTests(unittest.TestCase):
     def worker(self,lock,result,queue,hold):
-        return subprocess.Popen([sys.executable,'-c',WORKER,str(MODULE),str(lock),str(result),str(queue),str(hold)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        return subprocess.Popen([sys.executable,'-c',WORKER,str(MODULE),str(lock),str(result),str(queue),str(hold)],stdin=subprocess.PIPE if hold=='release' else None,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
 
     def wait_file(self,path,worker):
         end=time.monotonic()+5
@@ -59,7 +62,7 @@ class HcuQueueTests(unittest.TestCase):
     def test_timeout_and_legacy_failfast_cannot_enter_occupied_slot(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);lock=root/'hcu-1.lock';a=root/'holder'
-            holder=self.worker(lock,a,2,.5)
+            holder=self.worker(lock,a,2,'release')
             try:
                 self.wait_file(Path(str(a)+'.acquired'),holder)
                 for wait,reason in [(0,'another local'),(.1,'timed out waiting')]:
@@ -68,7 +71,11 @@ class HcuQueueTests(unittest.TestCase):
                     self.assertNotEqual(worker.returncode,0);self.assertIn(reason,error)
                     self.assertFalse(Path(str(result)+'.acquired').exists())
             finally:
-                holder.communicate(timeout=5)
+                try:
+                    _,error=holder.communicate(input='release\n',timeout=5)
+                    self.assertEqual(holder.returncode,0,error)
+                finally:
+                    if holder.poll() is None:holder.kill();holder.communicate()
 
     def test_expired_window_never_probes_or_launches_device(self):
         with tempfile.TemporaryDirectory() as temp:
