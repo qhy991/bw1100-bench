@@ -82,7 +82,7 @@ class HcuRunTests(unittest.TestCase):
             with mock.patch.object(hcu_run, 'ROOT', root), \
                  mock.patch.object(hcu_run, 'LOCK_DIR', root / '.locks'), \
                  mock.patch.object(sys, 'argv', argv), \
-                 mock.patch.object(hcu_run, '_runtime_binding', return_value={'dcu_index': 0}), \
+                 mock.patch.object(hcu_run, '_runtime_binding', return_value={'device_selector': '0', 'pci_bus_id': '0000:01:00.0'}), \
                  mock.patch.object(hcu_run.subprocess, 'check_output', side_effect=output), \
                  mock.patch.object(hcu_run.subprocess, 'run', side_effect=run), \
                  mock.patch.object(hcu_run.time, 'sleep'), \
@@ -110,12 +110,13 @@ class HcuRunTests(unittest.TestCase):
             (root / 'renderD131').mkdir()
             (root / 'renderD131/device').symlink_to(root / '0000:05:00.0')
             bus = 'HCU[3] : PCI Bus: 0000:05:00.0 --> SN: observed'
-            inventory = '0 0x45C75489238C7 /dev/dri/renderD131\n'
+            inventory = {'kind': 'c-3000.com/hcu', 'devices': [
+                {'name': '3', 'containerEdits': {'deviceNodes': [{'path': '/dev/dri/renderD131'}]}}]}
             binding = hcu_run._select_runtime_device(3, bus, inventory, root)
-            self.assertEqual(binding['dcu_index'], 0)
+            self.assertEqual(binding['device_selector'], '3')
             self.assertEqual(binding['pci_bus_id'], '0000:05:00.0')
             with self.assertRaisesRegex(RuntimeError, 'does not uniquely match'):
-                hcu_run._select_runtime_device(3, bus, '', root)
+                hcu_run._select_runtime_device(3, bus, {'kind': 'c-3000.com/hcu', 'devices': []}, root)
 
     def test_direct_profiler_runtime_error_is_distinct_from_candidate_error(self):
         self.assertEqual(hcu_run._runtime_error_marker('RuntimeError: No CUDA GPUs are available'),
@@ -125,6 +126,8 @@ class HcuRunTests(unittest.TestCase):
         self.assertEqual(hcu_run._runtime_error_marker('hsa_init failed: HSA_STATUS_ERROR_OUT_OF_RESOURCES'),
                          'hsa_status_error_out_of_resources')
         self.assertIsNone(hcu_run._runtime_error_marker('OutOfResources: shared memory required 98304'))
+        self.assertIsNone(hcu_run._runtime_error_marker(
+            'Ignoring [] DCUs as they are invalid\nOutOfResources: shared memory required 98304'))
 
     def test_binding_failure_stops_before_admission(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -159,7 +162,7 @@ class HcuRunTests(unittest.TestCase):
                  mock.patch.object(hcu_run.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)) as run, \
                  mock.patch.object(hcu_run, '_vram', return_value='0%'), \
                  mock.patch.object(hcu_run, '_kfd_visible', return_value=False), \
-                 mock.patch.object(hcu_run, '_runtime_binding', return_value={'dcu_index': 1}), \
+                 mock.patch.object(hcu_run, '_runtime_binding', return_value={'device_selector': '1', 'pci_bus_id': '0000:56:00.0'}), \
                  mock.patch.object(hcu_run, '_observe_release', side_effect=PermissionError('docker.sock')), \
                  mock.patch.object(hcu_run.time, 'sleep'):
                 self.assertEqual(hcu_run.main(), 75)

@@ -35,27 +35,35 @@ def _stop_for_unknown_release(job_id, reason):
 def _runtime_error_marker(output):
     text = (output or '').lower()
     markers = ('no cuda gpus are available', 'no hip gpus are available',
-               '0 active drivers', 'no valid dcus', 'dcus as they are invalid',
+               '0 active drivers', 'no valid dcus',
                'cannot connect to the docker daemon', 'docker.sock: connect: permission denied',
-               'hcu.sock: connect: permission denied', 'hsa_status_error_out_of_resources')
+               'hcu.sock: connect: permission denied', 'hsa_status_error_out_of_resources',
+               'hcu_device_identity_failed')
     return next((marker for marker in markers if marker in text), None)
 
 
-def _select_runtime_device(device, bus_output, inventory, drm_root=Path('/sys/class/drm')):
-    """Join the two installed inventories by PCI, never by their ordinal."""
+def _select_runtime_device(device, bus_output, cdi, drm_root=Path('/sys/class/drm')):
+    """Resolve the runtime's CDI selector by PCI, not dcu-ctk list ordinal."""
     buses = re.findall(r'HCU\[(\d+)\].*?PCI Bus:\s*([0-9a-fA-F:.]+)', bus_output)
     matches = [pci.lower() for index, pci in buses if int(index) == device]
     if len(matches) != 1:
         raise RuntimeError('selected HCU has no unique physical PCI binding')
+    if cdi.get('kind') != 'c-3000.com/hcu':
+        raise RuntimeError('unexpected installed DCU CDI device kind')
     candidates = []
-    for index, unique_id, render in re.findall(
-            r'^\s*(\d+)\s+(0x[0-9a-fA-F]+)\s+/dev/dri/(renderD\d+)\s*$',
-            inventory, re.MULTILINE):
-        pci = (drm_root / render / 'device').resolve().name.lower()
+    for record in cdi['devices']:
+        selector = str(record['name'])
+        if not selector.isdigit():
+            continue
+        nodes = [n['path'] for n in record.get('containerEdits', {}).get('deviceNodes', [])
+                 if re.fullmatch(r'/dev/dri/renderD\d+', n['path'])]
+        if len(nodes) != 1:
+            raise RuntimeError('single-card CDI selector must have one render device')
+        pci = (drm_root / Path(nodes[0]).name / 'device').resolve().name.lower()
         if pci == matches[0]:
-            candidates.append({'runtime': 'dcu', 'dcu_index': int(index),
-                               'pci_bus_id': pci, 'dcu_unique_id': unique_id,
-                               'render_node': '/dev/dri/' + render})
+            candidates.append({'runtime': 'dcu', 'device_selector': selector,
+                               'pci_bus_id': pci, 'cdi_device': cdi['kind'] + '=' + selector,
+                               'render_node': nodes[0]})
     if len(candidates) != 1:
         raise RuntimeError('DCU runtime inventory does not uniquely match selected physical HCU')
     return candidates[0]
@@ -63,8 +71,9 @@ def _select_runtime_device(device, bus_output, inventory, drm_root=Path('/sys/cl
 
 def _runtime_binding(device):
     bus = subprocess.check_output(['hy-smi', '--showbus'], universal_newlines=True, timeout=15)
-    inventory = subprocess.check_output(['dcu-ctk', 'dcu', 'list'], universal_newlines=True, timeout=15)
-    return _select_runtime_device(device, bus, inventory)
+    cdi = json.loads(subprocess.check_output(
+        ['dcu-ctk', 'cdi', 'generate', '--format', 'json'], universal_newlines=True, timeout=30))
+    return _select_runtime_device(device, bus, cdi)
 
 
 def _check_latest_start(latest_start_epoch):
@@ -189,7 +198,7 @@ def main():
         _check_latest_start(args.latest_start_epoch)
         try:
             binding = _runtime_binding(args.device)
-        except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+        except (OSError, RuntimeError, subprocess.SubprocessError, ValueError, KeyError) as error:
             _stop_for_unknown_release(None, 'physical_device_binding_failed: ' + str(error))
             raise
         _check_latest_start(args.latest_start_epoch)
@@ -234,11 +243,13 @@ def main():
             '-e', 'HOME=/tmp',
             # The runtime exposes only this PCI-bound card and HIP renumbers it to 0.
             # Reapplying the host HCU ordinal as HIP_VISIBLE_DEVICES hides the card.
-            '-e', 'DCU_VISIBLE_DEVICES=%d' % binding['dcu_index'],
+            '-e', 'DCU_VISIBLE_DEVICES=' + binding['device_selector'],
             '--runtime', 'dcu',
             '--entrypoint', 'bash', image_id,
             '-c', bootstrap,
-            'bash', str(child_timeout),
+            'bash', str(child_timeout), 'bash', '-c',
+            'python3 /work/scripts/hcu_device_identity.py "$1" || exit $?; shift; exec "$@"',
+            'bash', binding['pci_bus_id'],
         ] + command
         output = ''
         try:
