@@ -165,6 +165,7 @@ class HcuRunTests(unittest.TestCase):
                 self.assertEqual(hcu_run.main(), 75)
                 command = run.call_args.args[0]
                 self.assertIn('DCU_VISIBLE_DEVICES=1', command)
+                self.assertFalse(any(part.startswith('HIP_VISIBLE_DEVICES=') for part in command))
                 self.assertNotIn('--privileged', command)
                 self.assertNotIn('DCU_CREATOR', ' '.join(command))
                 with self.assertRaisesRegex(RuntimeError, 'stopped new GPU'):

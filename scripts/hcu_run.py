@@ -232,7 +232,8 @@ def main():
             '-v', str(ROOT) + ':/work', '-v', '/opt/hyhal:/opt/hyhal:ro',
             '-w', '/work', '-e', 'PYTHONDONTWRITEBYTECODE=1',
             '-e', 'HOME=/tmp',
-            '-e', 'HIP_VISIBLE_DEVICES=%d' % args.device,
+            # The runtime exposes only this PCI-bound card and HIP renumbers it to 0.
+            # Reapplying the host HCU ordinal as HIP_VISIBLE_DEVICES hides the card.
             '-e', 'DCU_VISIBLE_DEVICES=%d' % binding['dcu_index'],
             '--runtime', 'dcu',
             '--entrypoint', 'bash', image_id,
