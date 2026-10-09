@@ -1,10 +1,10 @@
 # bw1100-bench
 
-- `suite.json` owns the 10-task selection, difficulty rationale, smoke UUIDs, default
+- `suite.json` owns the task selection, difficulty rationale, smoke UUIDs, default
   seed and number of correctness rounds. `sources.lock.json` owns upstream revisions.
 - Raw dataset and generated problems stay in ignored `.data/`. Never upload them,
   even to this private repository. Preserve their upstream license and source binding.
-- `baselines/README.md` owns the ten-task community-baseline inventory. A
+- `baselines/README.md` owns the community-baseline inventory. A
   reference, hand-written reconstruction, or merely installed library is not
   a strong speed baseline; require exact original-task ABI and full gfx938
   correctness before using a community adapter for performance comparison.

@@ -10,7 +10,9 @@ per task; only an exact-ABI gfx938 full gate can qualify a candidate baseline.
 Latency additionally needs the same original generated inputs, source hashes,
 absolute times, paired forward/reverse order, and A/A drift controls.
 
-All ten entries now have a full original-workload gfx938 qualification. The
+The original ten entries have a full original-workload gfx938 qualification.
+Suite revision 2 also adds two standalone GEMM baseline candidates below; their
+GPU qualification is pending and they have no performance result. The
 table distinguishes shipped whole callables from compositions of optimized
 community primitives; qualification is not universal performance optimality.
 Final top-level entries L2/018, L2/024 and L2/056 were re-qualified after
@@ -47,6 +49,8 @@ model or plugin performance comparison.
 | L2/024 256-expert MoE | FlagGems FP32 grouped-GEMM composition | **Full device correctness qualified; community primitive composition** | `l2_024_flaggems_fp32_moe.py` keeps the original FP32 dispatch/SwiGLU/combine semantics and replaces the three per-expert GEMMs with the shipped FlagGems 5.4.0dev Hygon Triton `bmm` (true FP32 `tl.dot`). A CPU probe (`campaign/tools/l2_024_cpu_numeric_probe.py`) shows even an ideal BF16 fused kernel fails (matched 0.96946 < 0.98, max_abs 1.56e-2 vs atol 5.1e-4), so shipped BF16 fused MoE routes (vLLM `fused_experts`, AITER `fused_moe`, whose earlier attempt also VMFaulted) cannot meet the reference semantics. Passed 16 workloads × 10 rounds, 160/160 on HCU2 job `bw-4f5ca3ad565e`, terminal completed/released; max_abs 0.015625 is one BF16 ulp at the final rounding boundary within the effective upstream matched-ratio gate. |
 | L2/060 chunk gated delta rule | Unchanged vLLM-bundled FLA component kernels, FP32 mixed-gate composition | **Full device correctness qualified; community component composition** | `l2_060_fla_fp32_mixed.py` retains cyclic heads, original zero padding and FP32 intermediates, routes gates per site, and uses IEEE dot precision. The unchanged state JIT body is launched at BV=32/warps=4/stages=1 to fit the 64 KiB LDS limit. Passed 160/160 and completed/released. Four actual state-kernel dispatches were validated by rocprof on the original smoke. This supersedes the old adapter-level device-negative diagnosis; the fused single-gate entry still has different semantics. |
 | L2/056 complete decoder backward | PyTorch 2.11 ATen native training backward operators + vendor GEMMs | **Full device correctness qualified; community primitive composition** | `l2_056_aten_decoder_backward.py` binds the ten original gradient outputs and the original layouts/reduction chain, replacing the manual softmax gradient with `aten._softmax_backward_data` (FP32 operands, reference rounding point) and the manual SiLU derivative with `aten.silu_backward`, following the qualified L1/001 composition precedent. vLLM inference has no corresponding whole backward callable. Passed 16 workloads × 10 rounds, 160/160 on HCU2 job `bw-9105f0750a04`, terminal completed/released. |
+| L1/003 BF16 LM head projection | PyTorch/HIP vendor GEMM (`torch.matmul`) | **Candidate prepared; gfx938 qualification pending** | `l1_003_torch_lm_head.py` preserves K=2048, N=102400 and all 16 original workloads. All original keep counts equal the sequence length; no extra slicing is introduced. CPU checks are not a device gate or speed result. |
+| L1/077 FP16 Whisper output projection | PyTorch/HIP vendor GEMM (`torch.matmul`) | **Candidate prepared; gfx938 qualification pending** | `l1_077_torch_whisper_output.py` preserves K=1280, N=51866, decode M=1 and all 16 original workloads. CPU checks are not a device gate or speed result. |
 
 The L1/069 qualification is bound to source SHA-256
 `1430ad1e28a40be334b795de13083caa537a03049d92b5148530b2bee63c7b60`

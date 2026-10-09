@@ -1,15 +1,15 @@
 # bw1100-bench
 
-面向 Hygon BW1100 / gfx938 的 10 题正确性工作集：SOL-ExecBench **L1、L2 各 5 题，
-完整保留 160 个原始 workload**。用于后续 AITER/Triton/HIP 算子实现与迁移研究。
-默认每个 workload 生成 10 轮新输入；完整一轮题集共 1600 个正确性 round。
+面向 Hygon BW1100 / gfx938 的 12 题正确性工作集：SOL-ExecBench **L1 7 题、L2 5 题，
+完整保留 192 个原始 workload**。用于后续 AITER/Triton/HIP 算子实现与迁移研究。
+默认每个 workload 生成 10 轮新输入；完整一轮题集共 1920 个正确性 round。
 
 这是独立的 BW1100 正确性入口。它复用固定版本 SOL-ExecBench 的原始参考实现、
 输入生成器和数值比较器，不提供 NVIDIA SOL 分数、CUDA/CUPTI 计时或模型性能结论。
 题目与工作量的规范来源是 [suite.json](suite.json) 和
 [sources.lock.json](sources.lock.json)。
 
-原题 `reference.py` 只是真值来源，**十题并非都已有 vLLM 性能 baseline**。
+原题 `reference.py` 只是真值来源，**新加的两项 GEMM 还没有完成 gfx938 baseline 资格验证**。
 逐题社区实现、语义缺口和当前设备资格见
 [baselines/README.md](baselines/README.md)。已接入的适配器可作为下文
 `--candidate` 文件接受完全相同的原始正确性检查；尚未通过整题设备门的实现
@@ -32,6 +32,10 @@
 | L2/024 | 256 专家 MoE dispatch/compute/combine | 4 | top-8、不规则 gather/scatter、grouped GEMM、大权重 |
 | L2/060 | Chunk gated delta-rule attention | 5 | chunk=64、尾部 padding、三角更新、递归状态 |
 | L2/056 | 完整 decoder layer backward | 5 | 十个梯度输出、混合 dtype、attention/MLP/norm 反向组合 |
+| L1/003 | BF16 LM head GEMM | 2 | K=2048、N=102400，大词表规则N和不规则M |
+| L1/077 | FP16 Whisper output GEMM | 3 | K=1280、N=51866，decode小M、N尾块及大M |
+
+两项 GEMM 的原始尺寸、精度边界及资格状态见 [GEMM additions](docs/GEMM-ADDITIONS-2026-10-09.md)。
 
 完整题名、选择理由和最小输入规模的原始 smoke workload UUID 在 `suite.json`。
 Smoke 使用上游真实 shape，不缩小固定维度。L2/024 单份输入约 **12 GiB**，
@@ -54,8 +58,10 @@ uv pip install --python .venv/bin/python -r requirements-prepare.txt
 ```
 
 `prepare.py` 固定源码与数据修订，在 `.deps/sol-execbench` 安装源码，在 `.data/benchmark/`
-生成 10 道题的完整输入定义与参考程序。重复运行核对已有内容，遇到不同内容会停止，
+生成 12 道题的完整输入定义与参考程序。重复运行核对已有内容，遇到不同内容会停止，
 不会重置已有仓库。离线准备可使用 `--cache-dir <包含 L1.parquet、L2.parquet 的目录>`。
+Suite v2 的准备回执为 `.data/materialization-suite-v2.json`，已有十题的
+`.data/materialization.json` 保留原样，扩展题集不会因旧回执的任务数量不同而失败。
 
 宿主机仅查看题单不需要 Torch：
 
@@ -89,7 +95,7 @@ python bwbench.py check --task L1/069_rms_norm --device cuda:0 \
 输出路径必须新建；遇到首个生成、reference、候选执行或比较错误即停止并保存原因。
 只有候选在 gfx938 上跑完本题全部原始 workload 和 10 轮，才写
 `full_device_correctness=true`。CPU、参考程序自检、smoke 和少轮测试都不会获得这个标记。
-某一题通过不等于十题全部通过。
+某一题通过不等于整套题集全部通过。
 
 测试规则、已知阈值字段差异及补充的整数门见 [docs/CORRECTNESS.md](docs/CORRECTNESS.md)。
 
