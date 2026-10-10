@@ -108,6 +108,51 @@ class FreshBenchTests(unittest.TestCase):
         self.assertFalse(queue.release_audit(self.root)['release_records_clean'])
         self.assertEqual(queue.done_observation(self.root / 'DONE.json'), (None, 'missing_DONE'))
 
+    def test_unknown_release_blocks_next_author_on_same_hcu(self):
+        rows, launched, clock = [], [], [0]
+        for index in range(3):
+            run = self.root / str(index)
+            (run / 'campaign/logs').mkdir(parents=True)
+            (run / 'campaign/results').mkdir()
+            binding = {'frozen_workspace': '/intent/t00' + str(index), 'root': str(run),
+                       'host': 'fixture', 'hcu': 1 if index < 2 else 2, 'compiler_commit': 'compiler'}
+            write(run / 'campaign/binding.json', binding)
+            write(run / 'campaign/groups/c.json', {'hcu': binding['hcu']})
+            rows.append({**binding, 'prepared_commit': 'prepared'})
+        allocation = self.root / 'allocation.json'
+        write(allocation, {'host': 'fixture', 'capacity_per_hcu': 1,
+                           'start_window_seconds': 60, 'runs': rows})
+        def read_command(command, **kwargs):
+            if command[0] == 'docker' or 'ls-files' in command:
+                return ''
+            return 'compiler\n' if '/.deps/cake-ir' in str(command) else 'prepared\n'
+        def spawn(command, cwd, **kwargs):
+            run = Path(cwd)
+            launched.append(run.name)
+            admission = {'schema': 'bw1100-bench.hcu-admission.v1', 'job_id': 'fixture-' + run.name}
+            write(run / 'campaign/results/admission.json', admission)
+            if run.name == '2':
+                write(run / 'campaign/results/admission-terminal.json', {**admission,
+                      'completed_at': 1, 'exit_code': 0, 'container_still_running': False,
+                      'after_vram': '0%', 'after_kfd_visible': False})
+            write(run / 'campaign/DONE.json', {'tasks': [{'status': 'completed_pending_owner_review'}]})
+            class Child:
+                pid = 123
+                def poll(self): return 0
+            return Child()
+        def sleep(seconds): clock[0] += seconds
+        state = self.root / 'owner'
+        with patch.object(queue.subprocess, 'check_output', side_effect=read_command), patch.object(queue.subprocess, 'run'), \
+             patch.object(queue.subprocess, 'Popen', side_effect=spawn), patch.object(queue.time, 'time', side_effect=lambda: clock[0]), \
+             patch.object(queue.time, 'sleep', side_effect=sleep):
+            queue.run(state, allocation)
+        status = json.loads((state / 'STATUS.json').read_text())
+        self.assertEqual(launched, ['0', '2'])
+        self.assertEqual(status['pending'], ['/intent/t001'])
+        self.assertIn('1', status['blocked_hcus'])
+        self.assertNotIn('2', status['blocked_hcus'])
+        self.assertEqual(status['release_attention'][0]['issues'][0]['reason'], 'missing_terminal')
+
     def test_new_gemm_precision(self):
         for task, dtype in [('L1/003_lm_head_projection_with_logit_slicing', 'bf16'),
                             ('L1/077_whisper_decoder_output_projection', 'fp16')]:
@@ -246,9 +291,15 @@ class FreshBenchTests(unittest.TestCase):
             'sol_root': str(sol), 'data_root': str(data), 'flag_gems_root': str(flags)}
         write(self.root / 'plan.json', frozen)
         write(self.root / 'routing.json', routes)
-        env = {'GIT_AUTHOR_NAME': 'Bench Test', 'GIT_AUTHOR_EMAIL': 'bench-test@example.invalid',
-               'GIT_COMMITTER_NAME': 'Bench Test', 'GIT_COMMITTER_EMAIL': 'bench-test@example.invalid'}
-        with patch.object(prepare, 'ROOT', bench), patch.dict(os.environ, env):
+        env = {key: value for key, value in os.environ.items() if key not in
+               ('GIT_AUTHOR_NAME', 'GIT_AUTHOR_EMAIL', 'GIT_COMMITTER_NAME', 'GIT_COMMITTER_EMAIL', 'EMAIL')}
+        env.update(GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM='1')
+        with patch.object(prepare, 'ROOT', bench), patch.dict(os.environ, env, clear=True):
+            git(bench, 'config', '--local', '--unset', 'user.email')
+            with self.assertRaisesRegex(ValueError, 'user.email'):
+                prepare.prepare(self.root / 'plan.json', self.root / 'routing.json', 'local', self.root / 'allocation.json')
+            self.assertFalse((self.root / 'physical-runs').exists())
+            git(bench, 'config', '--local', 'user.email', 'bench-test@example.invalid')
             rows = prepare.prepare(self.root / 'plan.json', self.root / 'routing.json', 'local', self.root / 'allocation.json')
             self.assertEqual(len(rows), 2)
             for row in rows:
@@ -263,6 +314,8 @@ class FreshBenchTests(unittest.TestCase):
                 self.assertEqual(git(run, 'status', '--porcelain'), '')
                 self.assertEqual((run / 'scripts/hcu_device_identity.py').read_text(), 'qualified fixture route\n')
                 self.assertEqual(binding['gateway_files'], list(prepare.GATEWAY_FILES))
+                self.assertEqual(git(run, 'config', '--local', 'user.name'), 'Bench Test')
+                self.assertEqual(git(run, 'config', '--local', 'user.email'), 'bench-test@example.invalid')
             with self.assertRaises(FileExistsError):
                 prepare.prepare(self.root / 'plan.json', self.root / 'routing.json', 'local', self.root / 'allocation.json')
             git(bench, 'rm', 'scripts/hcu_device_identity.py')

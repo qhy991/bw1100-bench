@@ -22,6 +22,19 @@ def gateway_sources(root, commit):
     return sources
 
 
+def source_identity(root):
+    identity = {}
+    for key in ('user.name', 'user.email'):
+        try:
+            value = git(root, 'config', '--get', key)
+        except subprocess.CalledProcessError as error:
+            raise ValueError('Configure the Bench source checkout Git ' + key + ' before preparation') from error
+        if not value:
+            raise ValueError('Bench source checkout Git ' + key + ' is empty')
+        identity[key] = value
+    return identity
+
+
 def clone(source, destination, commit):
     subprocess.run(['git', 'clone', '--quiet', '--no-hardlinks', str(source), str(destination)], check=True)
     subprocess.run(['git', '-C', str(destination), 'checkout', '--quiet', '--detach', commit], check=True)
@@ -39,6 +52,7 @@ def prepare(plan_path, routing_path, host, output):
     validate_plan(plan, read(ROOT / 'suite.json'))
     bench_pin = plan['bindings']['bench']['commit']
     clean(ROOT, bench_pin)
+    identity = source_identity(ROOT)
     if output.exists():
         raise FileExistsError(output)
     hosts = routing['hosts']
@@ -80,6 +94,8 @@ def prepare(plan_path, routing_path, host, output):
         run = Path(route['root'])
         run.parent.mkdir(parents=True, exist_ok=True)
         clone(ROOT, run, bench_pin)
+        for key, value in identity.items():
+            subprocess.run(['git', '-C', str(run), 'config', '--local', key, value], check=True)
         subprocess.run(['git', '-C', str(run), 'fetch', '--quiet', str(gateway), config['gateway']['commit']], check=True)
         for name, content in gateway_files.items():
             (run / name).write_bytes(content)

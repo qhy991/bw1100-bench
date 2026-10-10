@@ -74,16 +74,12 @@ def run(root, allocation):
     root=Path(r['root']);audit=release_audit(root,read(ROOT/r['source_json_inventory']));done,done_error=done_observation(root/'campaign/DONE.json');row=dict(r,exit_code=code,ended_node_epoch=time.time(),done=done,done_read_error=done_error,release_audit=audit)
     finished.append(row);del children[key]
     if audit['issues'] or done_error or code:attention.append({'id':Path(r['frozen_workspace']).name,'hcu':r['hcu'],'root':r['root'],**audit})
-   # A historical missing receipt never authorizes release. Device jobs remain
-   # serialized by the gateway. A demonstrated live finished-run container blocks starts.
-   if attention:
-    try:
-     names=set(subprocess.check_output(['docker','ps','--format','{{.Names}}'],text=True,timeout=20).splitlines())
-     blocked={}
-     for x in attention:
-      live=sorted(names.intersection(x['jobs']))
-      if live:blocked.setdefault(x['hcu'],[]).extend(live)
-    except (OSError,subprocess.SubprocessError):blocked={h:['container_observation_unknown'] for h in hcus}
+   # Only canonical terminal receipts confirm release. An empty container list
+   # cannot discharge missing, unreadable or contradictory release evidence.
+   blocked={}
+   for item in attention:
+    if not item['release_records_clean']:
+     blocked.setdefault(item['hcu'],[]).append({'id':item['id'],'issues':item['issues']})
    counts=collections.Counter(r['hcu'] for r,p in children.values())
    if time.time()<stop:
     for h in hcus:
@@ -103,7 +99,7 @@ def run(root, allocation):
       try:
        with (root/'campaign/logs/owner-launch.log').open('x') as log:p=subprocess.Popen(command,cwd=root,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
       except OSError as e:
-       finished.append(dict(r,exit_code=None,launch_error=str(e),done=None));attention.append({'id':Path(r['frozen_workspace']).name,'hcu':h,'root':r['root'],'jobs':[],'issues':[{'reason':'launch_failed','error':str(e)}]});continue
+       finished.append(dict(r,exit_code=None,launch_error=str(e),done=None));attention.append({'id':Path(r['frozen_workspace']).name,'hcu':h,'root':r['root'],'jobs':[],'issues':[{'reason':'launch_failed','error':str(e)}],'release_records_clean':True});continue
       atomic(record,dict(r,pid=p.pid,node_epoch=time.time()));children[Path(r['frozen_workspace']).name]=(r,p);counts[h]+=1
       print('LAUNCHED',Path(r['frozen_workspace']).name,'HCU',h,'PID',p.pid,flush=True)
    if not pending and not children:

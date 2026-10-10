@@ -46,7 +46,9 @@ only `dtk.sh`, `hcu_run.py`, its required `hcu_device_identity.py`, `rocprof.sh`
 and `verify_rocprof_csv.py` from the qualified host gateway, and commits
 the Run's binding. It copies no prior candidate, outcome or author session. The full
 plan and routing remain recorded. The source checkout's author identity must already
-be configured for the preparation commit. No raw data is added to Git.
+be configured. Preparation reads both Git identity fields before creating any Run and
+copies them into each Run's repository-local configuration. It does not change global
+Git configuration or HOME. No raw data is added to Git.
 
 The owner must inspect `campaign/binding.json`, full baseline qualification, current
 runtime/device mapping and release state before dispatch. Reconciliation checks the
@@ -62,7 +64,8 @@ author sequencer; the qualified HCU gateway owns every device lease. `LAUNCH.jso
 per-Run reservations are create-only, so reconnect by observing the same owner PID and
 `STATUS.json`. Never start a replacement owner after an observation timeout. A missing
 DONE, nonzero owner exit, missing release record or live owned container remains
-attention in the terminal report. A start-window expiry leaves unstarted allocations
+attention in the terminal report. Unverified release blocks subsequent authors on that
+HCU; an empty container listing cannot clear it. A start-window expiry leaves unstarted allocations
 visible. Review each final confirmation, failed and unknown attempt before choosing
 the next Compiler. The script never performs automatic promotion or another batch.
 
