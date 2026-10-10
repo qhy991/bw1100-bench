@@ -16,7 +16,9 @@ def render():
             result = json.loads(path.read_text())
         except (OSError, ValueError) as exc:
             result = {'status': 'unknown', 'reason': type(exc).__name__}
-        rows.append({'directory': str(folder.relative_to(ROOT)), **result})
+        rows.append({'outcome': str(path.relative_to(ROOT)), **{key: result[key] for key in
+                     ('id', 'status', 'reason', 'conservative_geomean', 'candidate_source',
+                      'completed_at_epoch') if key in result}})
     value = {'deadline': json.loads((ROOT / 'campaign/deadline.json').read_text()),
              'observed_at_epoch': time.time(), 'own_evaluations': rows,
              'next_action': 'Use only this Run history; preserve unknown and failed attempts.'}
