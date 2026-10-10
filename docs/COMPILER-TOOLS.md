@@ -63,7 +63,7 @@ python3 campaign/compiler_tools.py verify --id mma-001
 ```
 
 The adapter uses the pinned Lab `resolve_action`, not a second matcher or rewrite
-implementation. It supplies only a snapshot of the explicitly named own parent.
+implementation. A parent must be a Cake Schedule/Program, not the final Torch wrapper. It supplies only a snapshot of the explicitly named own parent.
 Files outside the Run, Compiler examples, and symlinks escaping the Run are not
 parents. A Bench Run cannot use development-inherited material. A tool-generated
 parent must first replay as its original Program or stage.
@@ -81,11 +81,14 @@ interrupted directory remains unknown, cannot reuse its id, and is not silently
 recreated. `verify` replays the retained request and parent, checks the Program and
 all generated stages, and writes nothing. Later edits to the original author file
 do not change the retained snapshot. New transform requests stop at the existing
-search deadline; read-only replay remains available afterward.
+search deadline or after the development owner approves early closure; read-only
+replay remains available afterward.
 
 For Bench, emit each required stage with the existing bridge and construct the
 complete original-ABI callable. The bridge records and verifies the originating
-tool stage in its emission receipt. Then use the original `campaign/evaluate.py`
+tool stage in its emission receipt. Emit/evaluate the generated stage at its original
+path; copying it elsewhere is a directly authored snapshot without automatic origin
+binding. Then use the original `campaign/evaluate.py`
 path and its caller, precision, numerical and timing gates.
 
 ```bash

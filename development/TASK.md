@@ -19,8 +19,9 @@ Ralph owns candidate optimization. First evaluate the canonical starter, then ev
 the source named by campaign/inherited/provenance.json with a new unique evaluation ID. Its historical source
 and provenance are declared material, not a correctness or timing result under this
 Compiler. Requalify it on all five original cases inside this Run's budget. Keep it
-separate from candidates/starter.py. Then create structurally different Cake candidates
-under campaign/candidates. Use only:
+separate from candidates/starter.py. Then create structurally different Cake candidates.
+Keep authored candidates under campaign/candidates and generated tool stages at their
+original campaign/compiler-actions paths so emission retains their origin. Use only:
   python3 campaign/development_evaluate_owner.py --candidate RELATIVE_PATH --id UNIQUE_ID
 The adapter preserves your source, canonical assessment, unchanged emitted kernel,
 all original oracle checks, unprofiled callable samples and device release receipts.

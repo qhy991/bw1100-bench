@@ -157,6 +157,10 @@ def transform(root, identity, action):
     deadline = read(root / 'campaign/deadline.json')
     if time.time() >= deadline['search_stop_at_epoch']:
         raise ValueError('Search is closed; no new transform action')
+    closed = root / 'campaign/search-close-owner.json'
+    if ((root / 'campaign/development-binding.json').exists() and closed.exists()
+            and read(closed).get('decision') == 'approved'):
+        raise ValueError('Development owner already closed search; use read-only replay')
     if (not isinstance(action, dict) or set(action) != {'action', 'parent', 'transformation', 'parameters'}
             or action['action'] != 'transform' or not isinstance(action['parent'], str)):
         raise ValueError('Use a transform action with an own parent path, transformation and parameters')

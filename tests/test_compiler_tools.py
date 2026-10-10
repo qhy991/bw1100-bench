@@ -152,6 +152,17 @@ for task in ('gemm','silu'):
         self.write('campaign/binding.json', dict(compiler_commit='0' * 40))
         self.tool('catalog', success=False)
 
+    def test_approved_early_closure_refuses_new_actions_but_keeps_replay(self):
+        self.apply('before-close', self.request())
+        (self.root / 'campaign/binding.json').unlink()
+        self.write('campaign/development-binding.json', dict(compiler=self.pin))
+        self.write('campaign/deadline.json', dict(source_commit=self.prepared,
+                   search_stop_at_epoch=time.time() + 1200))
+        self.write('campaign/search-close-owner.json', dict(decision='approved'))
+        self.tool('transform', '--id', 'after-close', '--request', 'campaign/candidates/request.json', success=False)
+        self.assertFalse((self.root / 'campaign/compiler-actions/after-close').exists())
+        self.assertEqual(self.tool('verify', '--id', 'before-close')['replay'], 'matched')
+
     def test_development_json_emission_keeps_transform_origin_through_validation(self):
         self.apply('mma', self.request())
         shutil.copyfile(ROOT / 'development/development_evaluate.py', self.root / 'campaign/development_evaluate.py')
