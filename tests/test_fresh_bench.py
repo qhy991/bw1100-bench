@@ -97,6 +97,28 @@ class FreshBenchTests(unittest.TestCase):
             queue.run(state, self.root / 'absent-allocation.json')
         spawn.assert_not_called()
 
+    def test_explicit_task_subset_requires_exact_frozen_conditions(self):
+        subset = copy.deepcopy(self.plan)
+        subset['task_ids'] = subset['task_ids'][:6]
+        subset['allocations'] = [row for row in subset['allocations'] if row['task'] in subset['task_ids']]
+        subset['baseline_files'] = {task: path for task, path in subset['baseline_files'].items()
+                                    if task in subset['task_ids']}
+        subset['total_author_wall_seconds'] = 12 * 10800
+        validate_plan(subset, self.suite)
+        for mutation in ('empty', 'duplicate_task', 'unknown_task', 'missing_condition',
+                         'duplicate_allocation', 'foreign_allocation', 'foreign_baseline', 'zero_replicates'):
+            bad = copy.deepcopy(subset)
+            if mutation == 'empty': bad['task_ids'] = []
+            if mutation == 'duplicate_task': bad['task_ids'].append(bad['task_ids'][0])
+            if mutation == 'unknown_task': bad['task_ids'][0] = 'L1/not-in-suite'
+            if mutation == 'missing_condition': bad['allocations'].pop()
+            if mutation == 'duplicate_allocation': bad['allocations'][-1] = bad['allocations'][0]
+            if mutation == 'foreign_allocation': bad['allocations'][-1] = self.plan['allocations'][-1]
+            if mutation == 'foreign_baseline': bad['baseline_files']['L1/not-selected'] = 'extra.py'
+            if mutation == 'zero_replicates': bad['replicates'] = 0
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                validate_plan(bad, self.suite)
+
     def test_release_unknown_is_retained(self):
         admission = {'schema': 'bw1100-bench.hcu-admission.v1', 'job_id': 'owned'}
         write(self.root / 'a.json', admission)

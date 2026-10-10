@@ -24,9 +24,13 @@ def clean(root, commit):
 def validate_plan(plan, suite):
     if plan.get('kind') != 'rolling_bench_fresh_search' or plan.get('target') != 'gfx938':
         raise ValueError('Expected an evolve rolling gfx938 Bench allocation')
-    tasks = [row['id'] for row in suite['tasks']]
-    if len(set(plan['task_ids'])) != len(tasks) or set(plan['task_ids']) != set(tasks):
-        raise ValueError('This launch must cover the complete expanded Bench suite')
+    available = {row['id'] for row in suite['tasks']}
+    tasks = plan['task_ids']
+    if (not isinstance(tasks, list) or not tasks or any(not isinstance(task, str) for task in tasks)
+            or len(set(tasks)) != len(tasks) or not set(tasks) <= available):
+        raise ValueError('Select a nonempty unique task subset from the pinned Bench suite')
+    if type(plan['replicates']) is not int or plan['replicates'] < 1:
+        raise ValueError('Frozen replicates must be a positive integer')
     author = plan['author']
     if (author['wall_time_seconds'], author['confirmation_seconds']) != (10800, 1800):
         raise ValueError('Existing assay supports exactly 3 hours including 30 minute confirmation')
