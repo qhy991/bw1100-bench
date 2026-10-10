@@ -49,7 +49,8 @@ class RealCompilerToolsTests(unittest.TestCase):
         (self.root / '.deps').mkdir()
         (self.root / '.deps/cake-ir').symlink_to(self.source, target_is_directory=True)
         (self.root / 'campaign/candidates').mkdir(parents=True)
-        shutil.copyfile(ROOT / 'campaign/compiler_tools.py', self.root / 'campaign/compiler_tools.py')
+        for name in ('compiler_tools.py', '_compiler_tools.py'):
+            shutil.copyfile(ROOT / 'campaign' / name, self.root / 'campaign' / name)
         shutil.copyfile(ROOT / 'campaign/cake_bridge.py', self.root / 'campaign/cake_bridge.py')
         (self.root / 'campaign/groups').mkdir()
         self.write('campaign/groups/c.json', dict(compiler_commit=self.pin))
@@ -203,7 +204,8 @@ else:
         source = Path(os.environ['BWBENCH_CONTROL_SOURCE']).resolve()
         pin = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
         (old / '.deps/cake-ir').symlink_to(source, target_is_directory=True)
-        shutil.copyfile(ROOT / 'campaign/compiler_tools.py', old / 'campaign/compiler_tools.py')
+        for name in ('compiler_tools.py', '_compiler_tools.py'):
+            shutil.copyfile(ROOT / 'campaign' / name, old / 'campaign' / name)
         (old / 'campaign/binding.json').write_text(json.dumps(dict(compiler_commit=pin)))
         result = subprocess.run([sys.executable, 'campaign/compiler_tools.py', 'freeze'], cwd=old,
                                 capture_output=True, text=True, timeout=60)

@@ -5,6 +5,16 @@ existing evaluators, deadlines, final nomination rules and host owner remain
 distinct where their task contracts differ. This adapter starts no Provider or
 device work and writes no acceptance or Run terminal.
 
+The implementation is owned by Open-Cake's
+[`tools/hmz_compiler_tools.py`](https://github.com/qhy991/open-cake-ir/blob/main/tools/hmz_compiler_tools.py).
+`campaign/compiler_tools.py` is the workspace entrypoint. `_compiler_tools.py` is an
+exact projection, pinned by `campaign/compiler-tools-source.json`. Update it through
+`python3 scripts/sync_compiler_tools.py --source /checkouts/open-cake-ir` and verify it
+with the same command plus `--check`. Never edit the projection independently.
+The helper version belongs to the Bench scaffold; each condition still imports its
+own pinned Compiler, including versions that predate the helper. Future deployments
+use a new Bench commit. Active Runs retain their original source.
+
 ## What reaches the author
 
 Preparation invokes `campaign/compiler_tools.py freeze` against the clean
