@@ -1,4 +1,4 @@
-"""Finite Bench-only author sequencer; the existing HCU gateway exclusively owns device admission."""
+"""Finite author sequencer; the existing HCU gateway exclusively owns device admission."""
 from pathlib import Path
 import argparse,collections,fcntl,json,os,subprocess,sys,time
 ROOT = None
@@ -54,54 +54,68 @@ def run(root, allocation):
   fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
   assert not list(ROOT.glob('launch-*.json')) and not (ROOT/'LAUNCH.json').exists(),'Existing launch: inspect, never restart'
   spec=read(allocation);pending=list(spec['runs']);children={};finished=[];attention=[];blocked={}
+  kind=spec.get('kind','bench')
+  if kind not in ('bench','registered_task_development'):raise ValueError('Unsupported author allocation kind')
+  development=kind=='registered_task_development'
+  entry='campaign/development_launch.py' if development else 'campaign/launch.py'
+  binding_file='campaign/development-binding.json' if development else 'campaign/binding.json'
+  compiler_field='compiler' if development else 'compiler_commit'
+  identity_field='task' if development else 'frozen_workspace'
+  def run_id(row):return Path(row[identity_field]).name
   hcus=sorted({r['hcu'] for r in pending});capacity=spec['capacity_per_hcu']
-  if not pending or len({r['frozen_workspace'] for r in pending})!=len(pending) or len({Path(r['frozen_workspace']).name for r in pending})!=len(pending):raise ValueError('Expected unique nonempty host allocation')
+  if not pending or len({r[identity_field] for r in pending})!=len(pending) or len({run_id(r) for r in pending})!=len(pending):raise ValueError('Expected unique nonempty host allocation')
   if not 1<=capacity<=3 or any(h not in range(1,7) for h in hcus):raise ValueError('Unsupported author capacity or HCU')
+  if development and capacity!=1:raise ValueError('Development requires one author per HCU')
   if type(spec['start_window_seconds']) is not int or spec['start_window_seconds']<=0:raise ValueError('A positive frozen start window is required')
   if any(r['host']!=spec['host'] for r in pending):raise ValueError('Foreign host allocation')
   for r in pending:
-   if read(Path(r['root'])/'campaign/binding.json')!={k:v for k,v in r.items() if k!='prepared_commit'}:raise ValueError('Host subset differs from prepared binding')
+   if development and Path(r['batch_stop_file']).parent!=ROOT:raise ValueError('Development HCU stop files must use the allocated owner root')
+   if read(Path(r['root'])/binding_file)!={k:v for k,v in r.items() if k!='prepared_commit'}:raise ValueError('Host subset differs from prepared binding')
    if subprocess.check_output(['git','-C',r['root'],'rev-parse','HEAD'],text=True).strip()!=r['prepared_commit']:raise ValueError('Prepared source changed')
-   subprocess.run([sys.executable,'campaign/launch.py','--check'],cwd=r['root'],check=True)
+   subprocess.run([sys.executable,entry,'--check'],cwd=r['root'],check=True)
   started=time.time();stop=started+spec['start_window_seconds']
   with (ROOT/'LAUNCH.json').open('x') as f:json.dump({'owner_pid':os.getpid(),'node_epoch':started,'maximum_runs':len(pending),'no_restarts':True,'host':spec['host'],'maximum_authors':len(hcus)*capacity},f,indent=2)
   def state(phase):
-   atomic(ROOT/'STATUS.json',{'phase':phase,'owner_pid':os.getpid(),'node_epoch':time.time(),'started_node_epoch':started,'stop_new_at_node_epoch':stop,'host':spec['host'],'capacity_per_hcu':capacity,'running':[dict(r,pid=p.pid) for r,p in children.values()],'finished':finished,'pending':[r['frozen_workspace'] for r in pending],'release_attention':attention,'blocked_hcus':blocked,'scope':'author capacity only; HCU gateway owns all device locks and checks'})
+   atomic(ROOT/'STATUS.json',{'phase':phase,'owner_pid':os.getpid(),'node_epoch':time.time(),'started_node_epoch':started,'stop_new_at_node_epoch':stop,'host':spec['host'],'capacity_per_hcu':capacity,'running':[dict(r,pid=p.pid) for r,p in children.values()],'finished':finished,'pending':[r[identity_field] for r in pending],'release_attention':attention,'blocked_hcus':blocked,'scope':'author capacity only; HCU gateway owns all device locks and checks'})
   while True:
    for key,(r,p) in list(children.items()):
     code=p.poll()
     if code is None:continue
     root=Path(r['root']);audit=release_audit(root,read(ROOT/r['source_json_inventory']));done,done_error=done_observation(root/'campaign/DONE.json');row=dict(r,exit_code=code,ended_node_epoch=time.time(),done=done,done_read_error=done_error,release_audit=audit)
     finished.append(row);del children[key]
-    if audit['issues'] or done_error or code:attention.append({'id':Path(r['frozen_workspace']).name,'hcu':r['hcu'],'root':r['root'],**audit})
+    if audit['issues'] or done_error or code:attention.append({'id':run_id(r),'hcu':r['hcu'],'root':r['root'],**audit})
    # Only canonical terminal receipts confirm release. An empty container list
    # cannot discharge missing, unreadable or contradictory release evidence.
    blocked={}
    for item in attention:
     if not item['release_records_clean']:
      blocked.setdefault(item['hcu'],[]).append({'id':item['id'],'issues':item['issues']})
+   if development:
+    for r in pending:
+     if Path(r['batch_stop_file']).exists():
+      blocked.setdefault(r['hcu'],[]).append({'id':run_id(r),'issues':[{'reason':'development_HCU_stop','file':r['batch_stop_file']}]})
    counts=collections.Counter(r['hcu'] for r,p in children.values())
    if time.time()<stop:
     for h in hcus:
      while counts[h]<capacity and h not in blocked:
       i=next((i for i,r in enumerate(pending) if r['hcu']==h),None)
       if i is None:break
-      r=dict(pending.pop(i));r['hcu']=h;root=Path(r['root']);record=ROOT/('launch-'+Path(r['frozen_workspace']).name+'.json')
+      r=dict(pending.pop(i));r['hcu']=h;root=Path(r['root']);record=ROOT/('launch-'+run_id(r)+'.json')
       assert not (root/'campaign/deadline.json').exists() and not record.exists()
-      assert subprocess.check_output(['git','-C',str(root/'.deps/cake-ir'),'rev-parse','HEAD'],text=True).strip()==r['compiler_commit']
-      assert read(root/'campaign/groups/c.json')['hcu']==h
-      inventory=ROOT/'intake'/ (Path(r['frozen_workspace']).name+'-source-json.json');inventory.parent.mkdir(exist_ok=True)
+      assert subprocess.check_output(['git','-C',str(root/'.deps/cake-ir'),'rev-parse','HEAD'],text=True).strip()==r[compiler_field]
+      if not development:assert read(root/'campaign/groups/c.json')['hcu']==h
+      inventory=ROOT/'intake'/ (run_id(r)+'-source-json.json');inventory.parent.mkdir(exist_ok=True)
       source_json=subprocess.check_output(['git','-C',str(root),'ls-files','--','*.json'],text=True).splitlines()
       with inventory.open('x') as f:json.dump(source_json,f)
       r['source_json_inventory']=str(inventory.relative_to(ROOT))
       with record.open('x') as f:json.dump(dict(r,state='reserved_before_intake',node_epoch=time.time()),f,indent=2)
-      command=[sys.executable,'campaign/launch.py']
+      command=[sys.executable,entry]
       try:
        with (root/'campaign/logs/owner-launch.log').open('x') as log:p=subprocess.Popen(command,cwd=root,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
       except OSError as e:
-       finished.append(dict(r,exit_code=None,launch_error=str(e),done=None));attention.append({'id':Path(r['frozen_workspace']).name,'hcu':h,'root':r['root'],'jobs':[],'issues':[{'reason':'launch_failed','error':str(e)}],'release_records_clean':True});continue
-      atomic(record,dict(r,pid=p.pid,node_epoch=time.time()));children[Path(r['frozen_workspace']).name]=(r,p);counts[h]+=1
-      print('LAUNCHED',Path(r['frozen_workspace']).name,'HCU',h,'PID',p.pid,flush=True)
+       finished.append(dict(r,exit_code=None,launch_error=str(e),done=None));attention.append({'id':run_id(r),'hcu':h,'root':r['root'],'jobs':[],'issues':[{'reason':'launch_failed','error':str(e)}],'release_records_clean':True});continue
+      atomic(record,dict(r,pid=p.pid,node_epoch=time.time()));children[run_id(r)]=(r,p);counts[h]+=1
+      print('LAUNCHED',run_id(r),'HCU',h,'PID',p.pid,flush=True)
    if not pending and not children:
     state('terminal_with_release_attention' if attention else 'terminal');return
    if time.time()>=stop and not children:state('start_window_expired');return
