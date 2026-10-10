@@ -281,7 +281,7 @@ class FreshBenchTests(unittest.TestCase):
         bench = repo('bench')
         write(bench / 'suite.json', self.suite)
         write(bench / 'sources.lock.json', {'sol_execbench': {'revision': sol_pin}})
-        (bench / '.gitignore').write_text('.deps/\n.data/\n.local/\n')
+        (bench / '.gitignore').write_bytes((ROOT / '.gitignore').read_bytes())
         for name in ('TASK.md', 'protocol.json', 'compiler_tools.py', '_compiler_tools.py', 'compiler-tools-source.json'):
             target = bench / 'campaign' / name
             target.parent.mkdir(exist_ok=True)
