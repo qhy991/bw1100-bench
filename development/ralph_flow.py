@@ -4,7 +4,9 @@ from pathlib import Path
 from typing import Any
 from hmz.flows import Agent,Allowance,flow
 sys.path.insert(0,str(Path(__file__).resolve().parent))
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from development_stop import stopped
+from campaign.compiler_tools import author_context
 @flow(budget=Allowance(hours=3),resumable=True)
 def run(agents:tuple[Agent],task:str,state:dict[str,Any]|None=None)->None:
     (agent,)=agents
@@ -13,7 +15,7 @@ def run(agents:tuple[Agent],task:str,state:dict[str,Any]|None=None)->None:
         if stopped(binding):return
         d=json.loads(Path('campaign/deadline.json').read_text())
         if time.time()>=d['search_stop_at_epoch']:return
-        agent(task+'\nRead your own campaign/evaluations outcomes and generated source. Token usage is accounting only.',suppress=True)
+        agent(task+author_context(Path.cwd())+'\nRead your own campaign/evaluations outcomes and generated source. Token usage is accounting only.',suppress=True)
         if stopped(binding):return
         request = Path('campaign/SEARCH_CLOSE.json')
         if request.exists():

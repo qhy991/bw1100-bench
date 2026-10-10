@@ -10,6 +10,7 @@ import time
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from campaign.binding import reconcile
+from campaign.compiler_tools import catalog
 
 
 def write_new(path, value):
@@ -55,6 +56,7 @@ def main():
     if sys.argv[1:] not in ([], ['--check']):
         raise ValueError('launch takes only optional --check')
     entry, env = author_entry(binding)
+    catalog(ROOT)
     if sys.argv[1:] == ['--check']:
         print('Prepared binding matches the frozen allocation; author entry is available')
         return

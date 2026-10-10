@@ -10,6 +10,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from compiler_fixture import add_catalog
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -275,12 +276,13 @@ class FreshBenchTests(unittest.TestCase):
         for condition in ('control', 'successor'):
             source = repo(condition)
             write(source / 'compiler/revision.json', {'fixture': condition})
+            add_catalog(source, condition)
             compilers[condition] = (source, commit(source))
         bench = repo('bench')
         write(bench / 'suite.json', self.suite)
         write(bench / 'sources.lock.json', {'sol_execbench': {'revision': sol_pin}})
-        (bench / '.gitignore').write_text('.deps/\n.data/\n.local/\n')
-        for name in ('TASK.md', 'protocol.json'):
+        (bench / '.gitignore').write_bytes((ROOT / '.gitignore').read_bytes())
+        for name in ('TASK.md', 'protocol.json', 'compiler_tools.py', '_compiler_tools.py', 'compiler-tools-source.json'):
             target = bench / 'campaign' / name
             target.parent.mkdir(exist_ok=True)
             target.write_bytes((ROOT / 'campaign' / name).read_bytes())
@@ -331,6 +333,9 @@ class FreshBenchTests(unittest.TestCase):
                 self.assertNotEqual(binding['frozen_workspace'], row['root'])
                 self.assertEqual(list((run / 'campaign/candidates').iterdir()), [])
                 self.assertFalse((run / 'campaign/intake.json').exists())
+                api = json.loads((run / 'campaign/compiler-api.json').read_text())
+                self.assertEqual(api['compiler_commit'], row['compiler_commit'])
+                self.assertEqual(api['transformations'][0]['description'], row['condition'])
                 self.assertFalse((run / 'campaign/prior').exists())
                 self.assertEqual(git(run, 'ls-files', '.data'), '')
                 self.assertEqual(git(run, 'status', '--porcelain'), '')

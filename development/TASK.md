@@ -16,11 +16,12 @@ docs/MULTI_REGION_MMA.md and docs/wiki/primitives.md. Read the exact profiling s
 from the intake and the installed bw1100-kernelwiki mechanism pages before kernel changes.
 
 Ralph owns candidate optimization. First evaluate the canonical starter, then evaluate
-campaign/inherited/candidate.py with a new unique evaluation ID. Its historical source
+the source named by campaign/inherited/provenance.json with a new unique evaluation ID. Its historical source
 and provenance are declared material, not a correctness or timing result under this
 Compiler. Requalify it on all five original cases inside this Run's budget. Keep it
-separate from candidates/starter.py. Then create structurally different Cake candidates
-under campaign/candidates. Use only:
+separate from candidates/starter.py. Then create structurally different Cake candidates.
+Keep authored candidates under campaign/candidates and generated tool stages at their
+original campaign/compiler-actions paths so emission retains their origin. Use only:
   python3 campaign/development_evaluate_owner.py --candidate RELATIVE_PATH --id UNIQUE_ID
 The adapter preserves your source, canonical assessment, unchanged emitted kernel,
 all original oracle checks, unprofiled callable samples and device release receipts.
@@ -85,3 +86,19 @@ process is interrupted to honor this request. Read campaign/search-close-owner.j
 the request is refused; correct or withdraw your request before any new search. The original search cutoff and
 three-hour stop remain upper bounds; neither is extended. Do not repeatedly submit an
 unchanged No promotion conclusion or write ENDPOINT/DONE yourself.
+
+## Pinned Compiler tools
+
+The request includes campaign/compiler-api.json, generated from this Run's fixed
+Compiler registry. Public transforms are available only where that Compiler's
+applicability checks admit them; the catalog is not a speedup or hardware guarantee.
+Use `python3 campaign/compiler_tools.py inspect --parent OWN_PATH` for exact stage
+names. For explicit Compiler rewrites, write an own JSON transform request and use
+`python3 campaign/compiler_tools.py transform --request OWN_JSON --id UNIQUE_ID`.
+See docs/COMPILER-TOOLS.md for the request format and paths. Keep the recorded parent,
+request, result and generated Program/stages. A refused or interrupted action remains
+visible. `verify --id UNIQUE_ID` replays the CPU transformation without device work.
+Evaluate generated stage Schedules through this Run's original evaluator. Multi-stage
+Program outputs still need a complete callable and the original public ABI. Tool
+success is not numerical or performance acceptance. Do not edit the frozen catalog
+or replace an action id. Directly authored candidates remain supported.

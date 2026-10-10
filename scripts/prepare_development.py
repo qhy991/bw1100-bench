@@ -10,7 +10,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from campaign.binding import GATEWAY_FILES, clean, git, read
-from development.development_binding import ADAPTER_SCRIPTS, BUDGET, KIND, render_agents, render_task, validate_plan
+from development.development_binding import ADAPTER_SCRIPTS, BUDGET, KIND, inherited_path, render_agents, render_task, validate_plan
 from scripts.prepare_bench import clone, gateway_sources, new_json, source_identity
 
 
@@ -74,16 +74,17 @@ def prepare(plan_path, contracts_path, disposition_path, host, output):
         new_json(run / 'campaign/original-contracts.json', contracts)
         new_json(run / 'campaign/original-workload.json', contract['workload'])
         new_json(run / 'campaign/compiler-disposition.json', disposition)
-        new_json(run / 'campaign/inherited/provenance.json', dict(row['inherited'], source='campaign/inherited/candidate.py'))
-        (run / 'campaign/inherited/candidate.py').write_bytes(seeds[task])
+        new_json(run / 'campaign/inherited/provenance.json', dict(row['inherited'], source=inherited_path(row)))
+        (run / inherited_path(row)).write_bytes(seeds[task])
         (run / 'campaign/budget-3h.yaml').write_text(BUDGET)
         (run / 'campaign/TASK.md').write_text(render_task((ROOT / 'development/TASK.md').read_text(), binding))
         (run / 'AGENTS.md').write_text(render_agents())
         (run / 'campaign/JOURNAL.md').write_text('# Own development evidence\n')
         (run / 'campaign/JOURNAL/EVOLUTION.md').write_text('# Owning-layer leads and No promotion\n')
+        subprocess.run([sys.executable, str(run / 'campaign/compiler_tools.py'), 'freeze'], check=True)
         with (run / '.gitignore').open('a') as stream:
             for name in ('deadline.json', 'profile-intake.json', 'workload.json', 'development-inputs.pt',
-                         'starter-assessment.json', 'candidates/', 'evaluations/', 'logs/', 'JOURNAL/',
+                         'starter-assessment.json', 'compiler-actions/', 'candidates/', 'evaluations/', 'logs/', 'JOURNAL/',
                          'JOURNAL.md', 'ENDPOINT.json', 'DONE.json', 'controller-status.json',
                          'SEARCH_CLOSE.json', 'search-close-owner.json', 'search-close-owner.json.tmp',
                          'search-close-owner.jsonl', 'author-round-terminal.json', 'author-round-terminal.json.tmp'):

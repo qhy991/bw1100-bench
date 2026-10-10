@@ -58,3 +58,19 @@ the independent evolve owner reviews the frozen wrapper, receipt closure and rou
 chain in a separate comparison disposition. An assay-qualified Run remains pending
 owner attribution and cannot automatically become a Cake win or adoption decision.
 This review cannot change the nominee, reopen search or add post-budget measurements.
+
+## Pinned Compiler tools
+
+The request includes campaign/compiler-api.json, generated from this Run's fixed
+Compiler registry. Public transforms are available only where that Compiler's
+applicability checks admit them; the catalog is not a speedup or hardware guarantee.
+Use `python3 campaign/compiler_tools.py inspect --parent OWN_PATH` for exact stage
+names. For explicit Compiler rewrites, write an own JSON transform request and use
+`python3 campaign/compiler_tools.py transform --request OWN_JSON --id UNIQUE_ID`.
+See docs/COMPILER-TOOLS.md for the request format and paths. Keep the recorded parent,
+request, result and generated Program/stages. A refused or interrupted action remains
+visible. `verify --id UNIQUE_ID` replays the CPU transformation without device work.
+Evaluate generated stage Schedules through this Run's original evaluator. Multi-stage
+Program outputs still need a complete callable and the original public ABI. Tool
+success is not numerical or performance acceptance. Do not edit the frozen catalog
+or replace an action id. Directly authored candidates remain supported.

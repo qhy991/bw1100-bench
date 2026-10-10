@@ -139,6 +139,10 @@ GPU 模式仍需 DTK runtime、root/privileged 容器身份及 `/dev/kfd`、`/de
 两个 Compiler 条件准备为独立 fresh author Run，并通过现有 HCU gateway 执行。
 该入口只运行本轮 Bench；结果审阅后由 evolve owner 选择版本并启动开发任务。
 
+[Compiler tools for hmz](docs/COMPILER-TOOLS.md) 说明新冻结 Run 如何从各自 Compiler
+自动获得变换清单、调用已有 Lab 解析器，并保留可回放的父候选、参数与生成结果。
+Bench 和 53 题开发共用这条作者接口，继续使用各自原有评测和终态。
+
 ## 软件验证
 
 在独立 CPU 开发环境安装测试依赖并运行：

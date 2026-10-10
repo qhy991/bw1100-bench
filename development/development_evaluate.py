@@ -29,6 +29,9 @@ c = Compiler.load(C, C / 'compiler/revision.json')
 assert c.commit == b['compiler']
 assert list(w.case_ids) == b['case_ids'] and len(w.case_ids) == 5
 folder = R / 'campaign/evaluations' / a.id
+if Path(a.candidate).suffix not in ('.py', '.json'):
+    raise ValueError('Candidate must be Cake Python or a complete Schedule JSON')
+candidate_name = 'candidate' + Path(a.candidate).suffix
 
 if a.phase in ('emit', 'validate'):
     source = (R / a.candidate).resolve()
@@ -36,12 +39,20 @@ if a.phase in ('emit', 'validate'):
     if a.phase == 'emit':
         folder.mkdir(parents=True, exist_ok=False)
     else:
-        assert source == (folder / 'candidate.py').resolve(), 'nominee must use its retained source snapshot'
+        assert source == (folder / candidate_name).resolve(), 'nominee must use its retained source snapshot'
     text = source.read_text()
-    parsed = frontend.parse(text)
-    assessment = c.assess(parsed.document)
+    document = frontend.parse(text, filename=str(source)).document if source.suffix == '.py' else json.loads(text)
+    from campaign.compiler_tools import stage_origin
     if a.phase == 'emit':
-        (folder / 'candidate.py').write_text(text)
+        action = stage_origin(R, source, document)
+    else:
+        prior = json.loads((folder / 'emission.json').read_text())
+        action = prior.get('author_action_stage')
+        if action is not None and stage_origin(R, action, document) is None:
+            raise ValueError('Declared transform stage is outside the tool records')
+    assessment = c.assess(document)
+    if a.phase == 'emit':
+        (folder / candidate_name).write_text(text)
         (folder / 'assessment.json').write_text(json.dumps(dict(
             findings=[f.to_dict() for f in assessment.findings], accepted=assessment.accepted,
             lowering_eligible=assessment.lowering_eligible), indent=2))
@@ -60,21 +71,23 @@ if a.phase in ('emit', 'validate'):
     lowering = c.lower(assessment)
     emission = dict(source=str((folder / 'source.py').relative_to(R)),
                     entry=lowering.route.entry_point, outputs=list(schedule.outputs), compiler=c.commit)
+    if action is not None:
+        emission['author_action_stage'] = action
     if a.phase == 'validate':
         outcome = json.loads((folder / 'outcome.json').read_text())
         assert outcome['id'] == a.id and outcome['compiler'] == c.commit
         assert outcome['status'] == 'accepted' and outcome['phase'] == 'search'
-        assert outcome['candidate'] == str((folder / 'candidate.py').relative_to(R))
+        assert outcome['candidate'] == str((folder / candidate_name).relative_to(R))
         assert outcome['source'] == emission['source']
         assert [x['case_id'] for x in outcome['checks']] == list(w.case_ids)
         assert all(x['passed'] is True for x in outcome['checks'])
-        assert json.loads((folder / 'schedule.json').read_text()) == parsed.document
+        assert json.loads((folder / 'schedule.json').read_text()) == document
         assert json.loads((folder / 'emission.json').read_text()) == emission
         assert (folder / 'source.py').read_text() == lowering.source, 'retained emission differs from pinned Compiler'
         print('validated fixed-source five-case nominee; CPU only')
     else:
         (folder / 'source.py').write_text(lowering.source)
-        (folder / 'schedule.json').write_text(json.dumps(parsed.document, indent=2))
+        (folder / 'schedule.json').write_text(json.dumps(document, indent=2))
         (folder / 'emission.json').write_text(json.dumps(emission, indent=2))
         print('generated own source; no GPU')
 else:
@@ -91,7 +104,7 @@ else:
                   status='accepted' if all(x['passed'] for x in checks) else 'numerically_failed',
                   compiler=c.commit, scope='registered Task development; diagnostic callable samples, no performance win',
                   checks=checks, primary_us=next(x['samples_us'] for x in observed if x['case_id'] == 'primary'),
-                  candidate=str((folder / 'candidate.py').relative_to(R)), source=str((folder / 'source.py').relative_to(R)),
+                  candidate=str((folder / candidate_name).relative_to(R)), source=str((folder / 'source.py').relative_to(R)),
                   diagnosis_owner='inspect candidate/contract before promoting Compiler Finding')
     (folder / 'outcome.json').write_text(json.dumps(result, indent=2))
     print(json.dumps(result))

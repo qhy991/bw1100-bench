@@ -8,9 +8,17 @@ KIND = 'registered_task_development'
 ADAPTER_SCRIPTS = ('development_binding.py', 'development_control.py', 'development_device.py',
                    'development_evaluate.py', 'development_evaluate_owner.py', 'development_launch.py',
                    'development_prepare.py', 'development_stop.py', 'ralph_flow.py')
-SHARED_SCRIPTS = ('campaign/launch.py', 'campaign/binding.py', 'scripts/bench_queue.py',
+SHARED_SCRIPTS = ('campaign/compiler_tools.py', 'campaign/_compiler_tools.py',
+                  'campaign/compiler-tools-source.json', 'campaign/launch.py', 'campaign/binding.py', 'scripts/bench_queue.py',
                   'scripts/ralph_profile_intake.py')
 BUDGET = 'budget:\n  hours: 3\n'
+
+
+def inherited_path(row):
+    suffix = Path(row['inherited']['source']).suffix
+    if suffix not in ('.py', '.json'):
+        raise ValueError('Inherited candidate must be Cake Python or Schedule JSON')
+    return 'campaign/inherited/candidate' + suffix
 
 
 def render_task(template, binding):
@@ -82,6 +90,7 @@ def validate_plan(plan, contracts):
         contract = tasks[row['task']]
         if len(contract['case_ids']) != 5 or len(set(contract['case_ids'])) != 5:
             raise ValueError('Preserve all five original cases')
+        inherited_path(row)
         material = row['inherited']
         if not Path(material['source']).is_absolute() or not re.fullmatch('[0-9a-f]{40}', material['compiler']):
             raise ValueError('Declare an exact historical source material and Compiler')
@@ -146,7 +155,7 @@ def reconcile(root, mounted=False):
         expected = source_bytes(root, binding['gateway'], name)
         if (root / name).read_bytes() != expected:
             raise ValueError('Qualified gateway file changed: ' + name)
-    material = dict(row['inherited'], source='campaign/inherited/candidate.py')
+    material = dict(row['inherited'], source=inherited_path(row))
     if read(root / 'campaign/inherited/provenance.json') != material:
         raise ValueError('Inherited source provenance changed')
     return binding

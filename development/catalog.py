@@ -31,7 +31,7 @@ def catalog(compiler_source, commit, contracts, inherited=()):
         compiler.lower(assessment)
     for row in inherited:
         task = row['task']
-        assessment = compiler.assess(frontend.parse(Path(row['inherited']['source']).read_text()).document)
+        assessment = compiler.assess(frontend.read_schedule(row['inherited']['source']).document)
         if not assessment.lowering_eligible or assessment.target != 'gfx938':
             raise ValueError(task + ': inherited candidate is not eligible on the original Target')
         actual = {buffer.name: (list(buffer.shape), buffer.dtype.value, buffer.mode.value)
