@@ -10,7 +10,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from campaign.binding import GATEWAY_FILES, clean, git, read
-from development.development_binding import KIND, validate_plan
+from development.development_binding import ADAPTER_SCRIPTS, BUDGET, KIND, render_agents, render_task, validate_plan
 from scripts.prepare_bench import clone, gateway_sources, new_json, source_identity
 
 
@@ -62,9 +62,8 @@ def prepare(plan_path, contracts_path, disposition_path, host, output):
         for name in ('candidates', 'evaluations', 'logs', 'JOURNAL', 'inherited'):
             (run / 'campaign' / name).mkdir()
         (run / '.local/triton-cache').mkdir(parents=True)
-        for source in (ROOT / 'development').glob('*.py'):
-            if source.name != 'catalog.py':
-                shutil.copyfile(source, run / 'campaign' / source.name)
+        for name in ADAPTER_SCRIPTS:
+            shutil.copyfile(ROOT / 'development' / name, run / 'campaign' / name)
         binding = dict(task=task, root=str(run), host=host, home=config['home'], hcu=row['hcu'],
             compiler=plan['compiler'], gateway=config['gateway']['commit'], image=config['image'],
             gateway_files=list(GATEWAY_FILES), **plan['controls'],
@@ -77,21 +76,9 @@ def prepare(plan_path, contracts_path, disposition_path, host, output):
         new_json(run / 'campaign/compiler-disposition.json', disposition)
         new_json(run / 'campaign/inherited/provenance.json', dict(row['inherited'], source='campaign/inherited/candidate.py'))
         (run / 'campaign/inherited/candidate.py').write_bytes(seeds[task])
-        (run / 'campaign/budget-3h.yaml').write_text('budget:\n  hours: 3\n')
-        policy = (ROOT / 'development/TASK.md').read_text()
-        for key in ('task', 'rows', 'columns', 'depth', 'compiler'):
-            policy = policy.replace('{' + key + '}', str(binding[key]))
-        warning = ('The canonical gemm_bias starter has a retained mixed_magnitude failure; '
-                   'preserve the five-case contract and report the result.' if task == 'gemm_bias' else '')
-        (run / 'campaign/TASK.md').write_text(policy.replace('{starter_warning}', warning))
-        (run / 'AGENTS.md').write_text('''# Registered Compiler-development Run
-The pinned Compiler Task, original Workload, all five cases and comparator own semantics.
-Read campaign/TASK.md, development-binding.json, deadline.json and profiling intake.
-Use campaign/development_evaluate_owner.py and the qualified HCU gateway only.
-The canonical starter and declared inherited candidate are separate inputs; old outcomes are not inherited.
-The host owner assigns static author slots. Never modify its allocation, controls or terminal records.
-Do not inspect Bench artifacts or another Run. Never touch HCU0 or an unassigned device.
-''')
+        (run / 'campaign/budget-3h.yaml').write_text(BUDGET)
+        (run / 'campaign/TASK.md').write_text(render_task((ROOT / 'development/TASK.md').read_text(), binding))
+        (run / 'AGENTS.md').write_text(render_agents())
         (run / 'campaign/JOURNAL.md').write_text('# Own development evidence\n')
         (run / 'campaign/JOURNAL/EVOLUTION.md').write_text('# Owning-layer leads and No promotion\n')
         with (run / '.gitignore').open('a') as stream:

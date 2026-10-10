@@ -5,6 +5,31 @@ import re
 import subprocess
 
 KIND = 'registered_task_development'
+ADAPTER_SCRIPTS = ('development_binding.py', 'development_control.py', 'development_device.py',
+                   'development_evaluate.py', 'development_evaluate_owner.py', 'development_launch.py',
+                   'development_prepare.py', 'development_stop.py', 'ralph_flow.py')
+SHARED_SCRIPTS = ('campaign/launch.py', 'campaign/binding.py', 'scripts/bench_queue.py',
+                  'scripts/ralph_profile_intake.py')
+BUDGET = 'budget:\n  hours: 3\n'
+
+
+def render_task(template, binding):
+    for key in ('task', 'rows', 'columns', 'depth', 'compiler'):
+        template = template.replace('{' + key + '}', str(binding[key]))
+    warning = ('The canonical gemm_bias starter has a retained mixed_magnitude failure; '
+               'preserve the five-case contract and report the result.' if binding['task'] == 'gemm_bias' else '')
+    return template.replace('{starter_warning}', warning)
+
+
+def render_agents():
+    return '''# Registered Compiler-development Run
+The pinned Compiler Task, original Workload, all five cases and comparator own semantics.
+Read campaign/TASK.md, development-binding.json, deadline.json and profiling intake.
+Use campaign/development_evaluate_owner.py and the qualified HCU gateway only.
+The canonical starter and declared inherited candidate are separate inputs; old outcomes are not inherited.
+The host owner assigns static author slots. Never modify its allocation, controls or terminal records.
+Do not inspect Bench artifacts or another Run. Never touch HCU0 or an unassigned device.
+'''
 
 
 def read(path):
@@ -13,6 +38,10 @@ def read(path):
 
 def git(root, *args):
     return subprocess.check_output(['git', '-C', str(root), *args], text=True).strip()
+
+
+def source_bytes(root, commit, name):
+    return subprocess.check_output(['git', '-C', str(root), 'show', commit + ':' + name])
 
 
 def validate_plan(plan, contracts):
@@ -70,6 +99,13 @@ def reconcile(root, mounted=False):
     plan = read(root / 'campaign/development-plan.json')
     original = read(root / 'campaign/original-contracts.json')
     validate_plan(plan, original)
+    adapter = plan['adapter_commit']
+    for name in ADAPTER_SCRIPTS:
+        if (root / 'campaign' / name).read_bytes() != source_bytes(root, adapter, 'development/' + name):
+            raise ValueError('Frozen development adapter changed: ' + name)
+    for name in SHARED_SCRIPTS:
+        if (root / name).read_bytes() != source_bytes(root, adapter, name):
+            raise ValueError('Frozen shared author source changed: ' + name)
     row = next(item for item in plan['assignments'] if item['task'] == binding['task'])
     config = plan['hosts'][row['host']]
     if mounted and root != Path('/work'):
@@ -92,6 +128,11 @@ def reconcile(root, mounted=False):
         raise ValueError('Prepared Workload differs from the original contract')
     if any(binding[key] != plan['controls'][key] for key in plan['controls']):
         raise ValueError('Prepared author controls differ from the frozen plan')
+    template = source_bytes(root, adapter, 'development/TASK.md').decode()
+    if (root / 'campaign/TASK.md').read_text() != render_task(template, binding):
+        raise ValueError('Frozen development author scaffold changed')
+    if (root / 'AGENTS.md').read_text() != render_agents() or (root / 'campaign/budget-3h.yaml').read_text() != BUDGET:
+        raise ValueError('Frozen development instructions or budget changed')
     compiler = root / '.deps/cake-ir'
     if git(compiler, 'rev-parse', 'HEAD') != binding['compiler'] or git(compiler, 'status', '--porcelain'):
         raise ValueError('The selected Compiler must remain clean and immutable')
@@ -99,7 +140,7 @@ def reconcile(root, mounted=False):
     if binding['gateway_files'] != list(GATEWAY_FILES):
         raise ValueError('Qualified gateway helper closure changed')
     for name in GATEWAY_FILES:
-        expected = subprocess.check_output(['git', '-C', str(root), 'show', binding['gateway'] + ':' + name])
+        expected = source_bytes(root, binding['gateway'], name)
         if (root / name).read_bytes() != expected:
             raise ValueError('Qualified gateway file changed: ' + name)
     material = dict(row['inherited'], source='campaign/inherited/candidate.py')

@@ -160,6 +160,18 @@ class WorkloadContract:
         self.assertIn('CalledProcessError', result.stderr)
         self.assertFalse((Path(rows[0]['root']) / 'campaign/deadline.json').exists())
         self.assertFalse((Path(rows[0]['root']) / 'campaign/intake.json').exists())
+        run = Path(rows[0]['root'])
+        for name in ('campaign/development_control.py', 'campaign/launch.py', 'campaign/TASK.md', 'AGENTS.md'):
+            original = (run / name).read_text()
+            (run / name).write_text(original + '\n# changed after preparation\n')
+            git(run, 'add', name)
+            git(run, 'commit', '-qm', 'Changed frozen source fixture')
+            self.assertFalse(git(run, 'diff', '--name-only', 'HEAD'))
+            with self.assertRaisesRegex(ValueError, 'adapter changed|author source changed|scaffold changed|instructions'):
+                reconcile(run)
+            (run / name).write_text(original)
+            git(run, 'add', name)
+            git(run, 'commit', '-qm', 'Restore source fixture')
 
     def test_whole_workload_drift_or_unselected_disposition_creates_no_run(self):
         adapter, plan, contracts = self.sources()
