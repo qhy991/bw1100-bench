@@ -172,6 +172,13 @@ class WorkloadContract:
             (run / name).write_text(original)
             git(run, 'add', name)
             git(run, 'commit', '-qm', 'Restore source fixture')
+        write(run / 'campaign/deadline.json', dict(source_commit=git(run, 'rev-parse', 'HEAD')))
+        reconcile(run)
+        (run / 'campaign/inherited/candidate.py').write_text('# replaced after intake\n')
+        git(run, 'add', 'campaign/inherited/candidate.py')
+        git(run, 'commit', '-qm', 'Replace inherited material fixture')
+        with self.assertRaisesRegex(ValueError, 'source changed after Run intake'):
+            reconcile(run)
 
     def test_whole_workload_drift_or_unselected_disposition_creates_no_run(self):
         adapter, plan, contracts = self.sources()

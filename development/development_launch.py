@@ -8,7 +8,7 @@ import time
 
 from development_control import close_request, nominee, released
 from development_stop import stopped, halt
-from development_binding import reconcile
+from development_binding import git, reconcile
 
 R = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(R))
@@ -120,7 +120,8 @@ def main(root=R, check=False):
     started = time.time()
     deadline = dict(started_at_epoch=started, search_stop_at_epoch=started + 9000,
                     stop_at_epoch=started + 10800, wall_time_seconds=10800, budget_hours=3,
-                    confirmation_seconds=1800, author_executable=str(entry))
+                    confirmation_seconds=1800, author_executable=str(entry),
+                    source_commit=git(root, 'rev-parse', 'HEAD'))
     # Duplicate launches must not modify an earlier Run or its terminal records.
     with (root / 'campaign/deadline.json').open('x') as stream:
         json.dump(deadline, stream, indent=2)

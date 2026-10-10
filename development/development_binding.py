@@ -95,6 +95,9 @@ def reconcile(root, mounted=False):
     # Generated candidates and records are ignored; the prepared controls stay tracked.
     if git(root, 'diff', '--name-only', 'HEAD'):
         raise ValueError('Frozen development source or controls were modified')
+    deadline = root / 'campaign/deadline.json'
+    if deadline.exists() and read(deadline).get('source_commit') != git(root, 'rev-parse', 'HEAD'):
+        raise ValueError('Prepared source changed after Run intake')
     binding = read(root / 'campaign/development-binding.json')
     plan = read(root / 'campaign/development-plan.json')
     original = read(root / 'campaign/original-contracts.json')
