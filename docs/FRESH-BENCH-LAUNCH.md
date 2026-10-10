@@ -1,8 +1,9 @@
 # Frozen fresh-search launch
 
 This successor maintains the existing external Ralph campaign and common assay. It
-prepares the complete twelve-task suite for both frozen Compiler conditions. It does
-not launch GPU work during preparation, select a winning version, or dispatch the next
+prepares the frozen plan's explicit nonempty task subset of the twelve-task suite for
+both Compiler conditions. It does not launch GPU work during preparation, select a
+winning version, or dispatch the next
 53 development tasks. The evolve owner reviews all Bench terminal records first.
 
 Freeze with Open-Cake `tools/evolve.py freeze-bench` using this clean Bench commit,
@@ -10,6 +11,10 @@ Freeze with Open-Cake `tools/evolve.py freeze-bench` using this clean Bench comm
 `knowledge: none`, `reference_access: known_kernel_reproduction`, and
 `scaffold: bw1100-bench@<this commit>:campaign/TASK.md`. The shared author budget is
 10800 seconds including 1800 for confirmation. Name the model with effort explicitly.
+Each selected task must have every declared
+replicate in both conditions; unselected tasks cannot appear in its allocation or
+baseline map. A later subset is a separately named comparison segment, not a rewrite
+or replacement of an earlier cohort or its failed Runs.
 Every original 16-workload, ten-round gate remains unchanged. Each added GEMM baseline
 must pass that full gfx938 gate before the owner authorizes the cohort to launch.
 
@@ -52,7 +57,11 @@ Git configuration or HOME. No raw data is added to Git.
 
 The owner must inspect `campaign/binding.json`, full baseline qualification, current
 runtime/device mapping and release state before dispatch. Reconciliation checks the
-actual source and controls again immediately before each Run's clock starts.
+actual source and controls again immediately before each Run's clock starts. The owner
+uses `hmz` beside its own Python executable and prepends that bin directory to PATH.
+A bounded `hmz --help` check runs before deadline/intake creation, without a Provider
+request. A missing, non-executable or unusable entry therefore cannot consume a Run
+budget. Start the queue with the qualified environment's absolute Python path.
 
 ```bash
 python3 scripts/bench_queue.py --allocation /intent/node-a/allocation.json \

@@ -33,14 +33,31 @@ def author(command, env, timeout, log):
         return 124
 
 
+def author_entry(binding):
+    # Keep the venv path: resolving a symlinked Python would lose its sibling CLI.
+    bin_directory = Path(sys.executable).absolute().parent
+    entry = bin_directory / 'hmz'
+    if not entry.is_file() or not os.access(entry, os.X_OK):
+        raise RuntimeError('Author executable is unavailable beside the owner Python: ' + str(entry))
+    env = dict(os.environ, HOME=binding['home'], HIP_VISIBLE_DEVICES=str(binding['hcu']))
+    env['PATH'] = os.pathsep.join((str(bin_directory), str(Path(binding['home']) / '.local/bin'),
+                                 env.get('PATH', '')))
+    for key in ('http_proxy', 'https_proxy', 'all_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY'):
+        env.pop(key, None)
+    subprocess.run([str(entry), '--help'], env=env, check=True, timeout=30,
+                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return entry, env
+
+
 def main():
     os.chdir(ROOT)
     binding = reconcile(ROOT)
-    if sys.argv[1:] == ['--check']:
-        print('Prepared binding matches the frozen allocation')
-        return
-    if sys.argv[1:]:
+    if sys.argv[1:] not in ([], ['--check']):
         raise ValueError('launch takes only optional --check')
+    entry, env = author_entry(binding)
+    if sys.argv[1:] == ['--check']:
+        print('Prepared binding matches the frozen allocation; author entry is available')
+        return
     now = time.time()
     controls = binding['author']
     wall, reserve = controls['wall_time_seconds'], controls['confirmation_seconds']
@@ -52,12 +69,8 @@ def main():
     intake = {**binding, 'plan': 'campaign/groups/c.json', 'protocol': 'campaign/protocol.json',
               'source_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
               'experiment_kind': 'rolling_bench_fresh_search', 'arm': 'cake_ir',
-              'model': controls['model'], 'budget_hours': wall / 3600}
+              'model': controls['model'], 'budget_hours': wall / 3600, 'author_executable': str(entry)}
     write_new(ROOT / 'campaign/intake.json', intake)
-    env = dict(os.environ, HOME=binding['home'], HIP_VISIBLE_DEVICES=str(binding['hcu']))
-    env['PATH'] = str(Path(binding['home']) / '.local/bin') + ':' + env.get('PATH', '')
-    for key in ('http_proxy', 'https_proxy', 'all_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY'):
-        env.pop(key, None)
     model_code, error = None, None
     try:
         profile = subprocess.check_output([sys.executable, 'scripts/ralph_profile_intake.py',
@@ -76,7 +89,7 @@ def main():
         if remaining <= 0:
             raise ValueError('Preparation consumed the search budget')
         with (ROOT / 'campaign/logs/ralph.log').open('x') as log:
-            model_code = author(['hmz', 'exec', '-f', 'campaign/ralph_flow.py',
+            model_code = author([str(entry), 'exec', '-f', 'campaign/ralph_flow.py',
                                  '-a', controls['model'], '-c', 'campaign/budget.yaml',
                                  profile + '\n' + (ROOT / 'campaign/TASK.md').read_text()],
                                 env, remaining, log)
