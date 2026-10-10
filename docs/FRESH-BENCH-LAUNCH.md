@@ -42,7 +42,8 @@ python3 scripts/prepare_bench.py --plan /intent/plan.json \
 ```
 
 Preparation makes fresh Git clones, copies original data and dependencies, overlays
-only `dtk.sh`, `hcu_run.py` and `rocprof.sh` from the qualified host gateway, and commits
+only `dtk.sh`, `hcu_run.py`, its required `hcu_device_identity.py`, `rocprof.sh`
+and `verify_rocprof_csv.py` from the qualified host gateway, and commits
 the Run's binding. It copies no prior candidate, outcome or author session. The full
 plan and routing remain recorded. The source checkout's author identity must already
 be configured for the preparation commit. No raw data is added to Git.
@@ -69,8 +70,14 @@ The inherited assay uses complete callable wall time, 10 warmups, 30 forward pai
 30 reverse pairs and 30 A/A pairs per original workload. Search candidates must pass
 all original correctness cells, caller ownership and precision checks. The owner
 nominates one fixed source and confirms it inside the same three-hour budget. Final
-confirmation failure cannot become accepted DONE. Final wrapper rounding-chain review
-is still required; the schedule precision checks do not prove arbitrary Python wrappers.
+confirmation failure cannot become an accepted endpoint. A confirmed, source-bound
+nominee is sealed as `completed_pending_owner_review`. Emission replay validates the
+declared source, but does not prove the wrapper executed every declared receipt.
+After all Runs terminate and release is verified, the evolve owner reviews the frozen
+wrapper, receipt closure and rounding chain in a separate comparison disposition.
+The owner does not rewrite DONE, change a nominee, reopen search or add measurements
+outside the original budget. Until this review, the aggregate must say attribution is
+pending and cannot automatically adopt a version or dispatch the next 53 tasks.
 
 Historical implementation source was the retained round4 `engine/campaign` and its
 finite queue. This tracked successor removes historical seed paths and fixed ten-task

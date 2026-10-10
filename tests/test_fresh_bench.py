@@ -14,6 +14,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from campaign.binding import reconcile, validate_plan, validate_routing
+from campaign.completion import confirmed_row
 from campaign.precision_guard import validate as precision
 from campaign import evaluate
 
@@ -132,7 +133,7 @@ class FreshBenchTests(unittest.TestCase):
                 self.assertEqual(evaluate.main(), 1)
                 device.assert_not_called()
                 result = json.loads((self.root / 'campaign/evaluations/bad/outcome.json').read_text())
-                self.assertIn('executed emission receipts', result['reason'])
+                self.assertIn('declared emission receipts', result['reason'])
                 self.assertEqual(result['admission_receipts'], [])
                 with self.assertRaises(FileExistsError): evaluate.main()
         finally:
@@ -142,6 +143,7 @@ class FreshBenchTests(unittest.TestCase):
         c = self.root / 'campaign'
         c.mkdir()
         (c / 'finish.py').write_bytes((ROOT / 'campaign/finish.py').read_bytes())
+        (c / 'completion.py').write_bytes((ROOT / 'campaign/completion.py').read_bytes())
         (c / 'candidate.py').write_text('def run(): pass\n')
         digest = hashlib.sha256((c / 'candidate.py').read_bytes()).hexdigest()
         write(c / 'intake.json', {'plan': 'campaign/group.json', 'protocol': 'campaign/protocol.json',
@@ -161,6 +163,29 @@ class FreshBenchTests(unittest.TestCase):
         self.assertEqual(result['best_speedup'], 2)
         self.assertEqual(len(result['unknown_attempts']), 1)
         self.assertEqual(result['final_confirmation']['status'], 'confirmation_failed')
+
+    def test_confirmation_cannot_switch_to_another_search_candidate(self):
+        candidates = []
+        for name in ('confirmed', 'other'):
+            path = self.root / (name + '.py')
+            path.write_text('def run(): return ' + repr(name))
+            candidates.append({'id': name, 'candidate_source': path.name,
+                'source_sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+                'handoff_row': {'task': 'task', 'candidate_source': path.name, 'reason': 'search passed'}})
+        write(self.root / 'campaign/final-confirmation/nomination.json', candidates[0])
+        confirmation = {'status': 'confirmed', 'nominated_id': 'confirmed'}
+        with self.assertRaisesRegex(ValueError, 'missing, stale'):
+            confirmed_row(self.root, confirmation, candidates[1:], {})
+        with patch('campaign.completion.validate') as gate:
+            result = confirmed_row(self.root, confirmation, candidates, {})
+            self.assertEqual(result['candidate_source'], 'confirmed.py')
+            self.assertEqual(gate.call_args.args[1]['tasks'][0]['latency_report'], 'campaign/final-confirmation/latency.json')
+        with patch('campaign.completion.validate', side_effect=ValueError('timing binds other source')):
+            with self.assertRaisesRegex(ValueError, 'timing binds other source'):
+                confirmed_row(self.root, confirmation, candidates, {})
+        (self.root / 'confirmed.py').write_text('# changed after confirmation')
+        with self.assertRaisesRegex(ValueError, 'source changed'):
+            confirmed_row(self.root, confirmation, candidates, {})
 
     def test_prepare_real_git_pair_is_fresh_and_reconciles(self):
         def git(repo, *args):
@@ -236,8 +261,14 @@ class FreshBenchTests(unittest.TestCase):
                 self.assertFalse((run / 'campaign/prior').exists())
                 self.assertEqual(git(run, 'ls-files', '.data'), '')
                 self.assertEqual(git(run, 'status', '--porcelain'), '')
+                self.assertEqual((run / 'scripts/hcu_device_identity.py').read_text(), 'qualified fixture route\n')
+                self.assertEqual(binding['gateway_files'], list(prepare.GATEWAY_FILES))
             with self.assertRaises(FileExistsError):
                 prepare.prepare(self.root / 'plan.json', self.root / 'routing.json', 'local', self.root / 'allocation.json')
+            git(bench, 'rm', 'scripts/hcu_device_identity.py')
+            git(bench, 'commit', '-qm', 'Missing helper negative fixture')
+            with self.assertRaisesRegex(ValueError, 'hcu_device_identity.py'):
+                prepare.gateway_sources(bench, git(bench, 'rev-parse', 'HEAD'))
             run = Path(rows[0]['root'])
             modified = json.loads((run / 'campaign/groups/c.json').read_text())
             modified['hcu'] = 2

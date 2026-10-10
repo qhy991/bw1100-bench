@@ -80,3 +80,24 @@ def validate(root, document, plan):
             wins += min(ratios) - 1 > bar
         if not wins:
             raise ValueError('accepted candidate has no robust winning cell')
+
+
+def confirmed_row(root, confirmation, accepted, plan):
+    """Return only the unchanged nominee covered by the final confirmation."""
+    if confirmation.get('status') != 'confirmed':
+        raise ValueError('Final confirmation did not pass')
+    nominees = [value for value in accepted if value['id'] == confirmation.get('nominated_id')]
+    if len(nominees) != 1:
+        raise ValueError('Confirmed nomination is missing, stale or ambiguous')
+    nominee = load(root, 'campaign/final-confirmation/nomination.json')
+    if nominee != nominees[0]:
+        raise ValueError('Final nomination differs from its retained search outcome')
+    bindings = dict(nominee.get('cake_artifact_bindings', {}))
+    bindings[nominee['candidate_source']] = nominee['source_sha256']
+    if any(hashlib.sha256(inside(root, name).read_bytes()).hexdigest() != expected
+           for name, expected in bindings.items()):
+        raise ValueError('Confirmed nomination source changed')
+    row = dict(nominee['handoff_row'], latency_report='campaign/final-confirmation/latency.json')
+    validate(root, {'tasks': [row]}, plan)
+    row['reason'] = 'Source-bound fixed nominee passed final confirmation; ' + row['reason']
+    return row

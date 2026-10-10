@@ -10,9 +10,16 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from campaign.binding import clean, git, read, validate_plan, validate_routing
+from campaign.binding import GATEWAY_FILES, clean, git, read, validate_plan, validate_routing
 
-GATEWAY_FILES = ('scripts/dtk.sh', 'scripts/hcu_run.py', 'scripts/rocprof.sh')
+def gateway_sources(root, commit):
+    sources = {}
+    for name in GATEWAY_FILES:
+        try:
+            sources[name] = subprocess.check_output(['git', '-C', str(root), 'show', commit + ':' + name], stderr=subprocess.PIPE)
+        except subprocess.CalledProcessError as error:
+            raise ValueError('Qualified gateway is missing required helper: ' + name) from error
+    return sources
 
 
 def clone(source, destination, commit):
@@ -42,6 +49,7 @@ def prepare(plan_path, routing_path, host, output):
     config = hosts[host]
     gateway = Path(config['gateway']['root'])
     clean(gateway, config['gateway']['commit'])
+    gateway_files = gateway_sources(gateway, config['gateway']['commit'])
     if not config['image'].startswith('sha256:'):
         raise ValueError('Use the qualified immutable image ID')
     if type(config['start_window_seconds']) is not int or config['start_window_seconds'] <= 0:
@@ -73,8 +81,7 @@ def prepare(plan_path, routing_path, host, output):
         run.parent.mkdir(parents=True, exist_ok=True)
         clone(ROOT, run, bench_pin)
         subprocess.run(['git', '-C', str(run), 'fetch', '--quiet', str(gateway), config['gateway']['commit']], check=True)
-        for name in GATEWAY_FILES:
-            content = subprocess.check_output(['git', '-C', str(gateway), 'show', config['gateway']['commit'] + ':' + name])
+        for name, content in gateway_files.items():
             (run / name).write_bytes(content)
         (run / '.deps').mkdir()
         clone(Path(config['compiler_roots'][assignment['condition']]), run / '.deps/cake-ir', plan['bindings'][assignment['condition']]['commit'])

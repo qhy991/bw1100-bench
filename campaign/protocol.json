@@ -24,5 +24,6 @@
   "final_confirm_samples_per_direction": 30,
   "timing": "complete callable wall; 10 warmups; 30 forward pairs, 30 reverse pairs, 30 A/A pairs per original workload",
   "post_budget_confirmation": "none; one source-bound nomination confirmed inside original wall budget",
-  "claim_scope": "rolling engineering system-version comparison; not heldout or pure Compiler attribution"
+  "claim_scope": "rolling engineering system-version comparison; not heldout or pure Compiler attribution",
+  "attribution": "common assay qualification is pending independent owner wrapper/receipt/rounding-chain review; no automatic Cake win or adoption"
 }

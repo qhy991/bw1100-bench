@@ -57,7 +57,7 @@ def main():
                 artifact_bindings[path] = digest(inside(ROOT, path))
         if plan['arm'] == 'cake_ir':
             if not args.cake_artifact:
-                raise ValueError('Cake candidates need their executed emission receipts')
+                raise ValueError('Cake candidates need their declared emission receipts')
             command = ['bash', 'scripts/dtk.sh', 'cpu', intake['image'],
                        '/usr/bin/timeout', '-k', '10s', '180s', 'python3',
                        'campaign/cake_bridge.py', 'verify-many'] + args.cake_artifact

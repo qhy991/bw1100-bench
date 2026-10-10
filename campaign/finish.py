@@ -3,8 +3,11 @@ import json
 from pathlib import Path
 import time
 import hashlib
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from campaign.completion import confirmed_row
 intake = json.loads((ROOT / 'campaign/intake.json').read_text())
 plan = json.loads((ROOT / intake['plan']).read_text())
 protocol = json.loads((ROOT / intake['protocol']).read_text())
@@ -57,17 +60,24 @@ endpoint['compiler_commit'] = intake['compiler_commit']
 endpoint['frozen_workspace'] = intake['frozen_workspace']
 cf=ROOT/'campaign/final-confirmation/result.json'
 endpoint['final_confirmation']=json.loads(cf.read_text()) if cf.exists() else {'status':'missing'}
+row = None
+try:
+    row = confirmed_row(ROOT, endpoint['final_confirmation'], accepted, plan)
+    row['status'] = 'completed_pending_owner_review'
+    row['reason'] = 'Fixed nominee passed the common assay; wrapper execution and rounding-chain attribution await independent owner review'
+    endpoint['final_evidence_status'] = 'assay_qualified_pending_owner_review'
+except (KeyError, ValueError, OSError) as error:
+    endpoint['final_evidence_status'] = 'not_accepted'
+    endpoint['final_evidence_reason'] = type(error).__name__ + ': ' + str(error)
+if row is None:
+    row = {'task': plan['tasks'][0]['id'],
+           'status': 'blocked' if best or unknown or endpoint['final_confirmation'].get('status') == 'confirmed' else 'no_robust_gain',
+           'reason': 'No confirmed candidate at the fixed endpoint; ' + endpoint['final_evidence_reason'],
+           'evidence': ['campaign/ENDPOINT.json', 'campaign/JOURNAL.md'],
+           'profile_skip_reason': 'Read JOURNAL for actual diagnostic attempts; no accepted candidate for final attribution'}
 with (ROOT / 'campaign/ENDPOINT.json').open('x') as stream:
     json.dump(endpoint, stream, indent=2)
     stream.write('\n')
-if best and endpoint['final_confirmation'].get('status') == 'confirmed':
-    row = dict(best['handoff_row'], latency_report='campaign/final-confirmation/latency.json')
-    row['reason'] = 'Highest conservative geomean among canonical accepted evaluations within fixed budget; ' + row['reason']
-else:
-    row = {'task': plan['tasks'][0]['id'], 'status': 'blocked' if best or unknown else 'no_robust_gain',
-           'reason': 'No confirmed candidate at the fixed endpoint; inspect retained search, unknown attempts and final confirmation',
-           'evidence': ['campaign/ENDPOINT.json', 'campaign/JOURNAL.md'],
-           'profile_skip_reason': 'Read JOURNAL for actual diagnostic attempts; no accepted candidate for final attribution'}
 with (ROOT / 'campaign/DONE.json').open('x') as stream:
     json.dump({'tasks': [row]}, stream, indent=2)
     stream.write('\n')

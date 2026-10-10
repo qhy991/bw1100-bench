@@ -4,6 +4,9 @@ import hashlib
 import json
 import subprocess
 
+GATEWAY_FILES = ("scripts/dtk.sh", "scripts/hcu_run.py", "scripts/hcu_device_identity.py",
+                 "scripts/rocprof.sh", "scripts/verify_rocprof_csv.py")
+
 
 def read(path):
     return json.loads(path.read_text())
@@ -95,6 +98,8 @@ def reconcile(root):
         raise ValueError('Prepared Compiler differs')
     if str(root.resolve()) != binding['root']:
         raise ValueError('Prepared physical root differs from host routing')
+    if binding['gateway_files'] != list(GATEWAY_FILES):
+        raise ValueError('Prepared gateway closure is incomplete')
     if binding['hcu'] not in range(1, 7):
         raise ValueError('Only declared HCU1..6 routes are supported')
     clean(root / '.deps/cake-ir', binding['compiler_commit'])

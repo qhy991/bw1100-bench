@@ -19,9 +19,9 @@ results or external kernel collections. Knowledge is the frozen plan's selection
 The host filesystem is not an isolation boundary. Read campaign/management/StateCard.json
 before each proposal and after context compaction.
 
-All custom GPU computation must be unchanged Cake emission with executed receipts.
+All custom GPU computation must be unchanged Cake emission with declared emission receipts.
 Author a Schedule or use public Compiler transforms, emit with campaign/cake_bridge.py,
-and retain each executed receipt. Wrappers preserve the public ABI and may use the
+and retain every declared receipt. Wrappers preserve the public ABI and may use the
 source-bound community calls. Native Torch/Triton/HIP math or torch.compile is not a
 counted Cake solution. Never edit Compiler, evaluator, protocol or final confirmation.
 
@@ -50,3 +50,11 @@ queue waits, correctness, profiling, timing and final confirmation. Search stops
 Token usage is accounting only. Do not stop at the first win, reset a deadline,
 restart a Run or start another task. The owner runs final_confirmation and finish;
 the author must not run them. A missing or failed final result stays missing or failed.
+
+The common assay confirms numerical and measured behavior of the fixed wrapper.
+Receipt replay proves the declared source is unchanged Compiler emission; it does not
+prove the wrapper executed every declared artifact. After all Bench Runs terminate,
+the independent evolve owner reviews the frozen wrapper, receipt closure and rounding
+chain in a separate comparison disposition. An assay-qualified Run remains pending
+owner attribution and cannot automatically become a Cake win or adoption decision.
+This review cannot change the nominee, reopen search or add post-budget measurements.

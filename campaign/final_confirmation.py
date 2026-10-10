@@ -25,7 +25,7 @@ def main():
     stale=[x['id'] for x in eligible if not source_bound(ROOT,x)]
     eligible=[x for x in eligible if x['id'] not in stale]
     nominee=max(eligible,key=lambda x:x['conservative_geomean']) if eligible else None
-    result={'scope':'one fixed nominee; independent paired/A-A confirmation inside total3h',
+    result={'scope':'one fixed nominee; common assay confirmation inside total3h; attribution pending independent owner review',
             'status':'missing_qualified_nominee','nominated_id':None,
             'stale_artifacts_excluded':stale,'budget_stop_epoch':deadline['stop_at_epoch']}
     try:
