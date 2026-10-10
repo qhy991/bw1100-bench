@@ -1,0 +1,29 @@
+{
+  "schema": "bwbench.fixed-budget-comparison.v1",
+  "budget_hours": 3,
+  "wall_time_seconds": 10800,
+  "search_seconds": 9000,
+  "confirmation_seconds": 1800,
+  "final_handoff_minutes": 30,
+  "checkpoint_minutes": [
+    30,
+    60,
+    120,
+    150,
+    180
+  ],
+  "primary_endpoint": "confirmed conservative geomean versus fixed community baseline across all original workloads",
+  "minimum_materiality": 0.01,
+  "stop_at_first_win": false,
+  "initial_incumbent": "community baseline; no inherited candidate",
+  "reference_access": "known_kernel_reproduction",
+  "token_policy": "accounting_only_no_total_or_per_turn_cap",
+  "author_isolation": "fresh contexts and separate directories; host filesystem OS isolation is not established",
+  "cache_policy": "separate per-Run persistent caches; no other condition candidate or cache access",
+  "precision_gate": "original Task semantics, caller guards, explicit operand/accumulator checks and final wrapper review",
+  "final_confirm_samples_per_direction": 30,
+  "timing": "complete callable wall; 10 warmups; 30 forward pairs, 30 reverse pairs, 30 A/A pairs per original workload",
+  "post_budget_confirmation": "none; one source-bound nomination confirmed inside original wall budget",
+  "claim_scope": "rolling engineering system-version comparison; not heldout or pure Compiler attribution",
+  "attribution": "common assay qualification is pending independent owner wrapper/receipt/rounding-chain review; no automatic Cake win or adoption"
+}
