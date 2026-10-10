@@ -133,6 +133,12 @@ GPU 模式仍需 DTK runtime、root/privileged 容器身份及 `/dev/kfd`、`/de
 [docs/RALPH-PROFILING.md](docs/RALPH-PROFILING.md) 通过本仓库入口采集
 `rocprof` 诊断收据；计时分数仍使用无 profiler 的配对测量。
 
+## 固定版本的新一轮搜索
+
+[Fresh Bench launch](docs/FRESH-BENCH-LAUNCH.md) 说明如何将 evolve 冻结的十二题、
+两个 Compiler 条件准备为独立 fresh author Run，并通过现有 HCU gateway 执行。
+该入口只运行本轮 Bench；结果审阅后由 evolve owner 选择版本并启动开发任务。
+
 ## 软件验证
 
 在独立 CPU 开发环境安装测试依赖并运行：
