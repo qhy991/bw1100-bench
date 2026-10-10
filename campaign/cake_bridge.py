@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 CAKE = ROOT / '.deps/cake-ir'
 PIN = json.loads((ROOT / 'campaign/groups/c.json').read_text())['compiler_commit']
 
@@ -33,6 +34,8 @@ def emit(schedule_path, output_dir):
     if document.get('target') != 'gfx938' or document.get('lowering', {}).get('backend') != 'triton':
         raise ValueError('This arm is exact gfx938 + Triton')
     engine = compiler()
+    from campaign.compiler_tools import stage_origin
+    action = stage_origin(ROOT, schedule_path, document)
     assessment = engine.assess(document)
     destination = inside(output_dir)
     destination.mkdir(parents=True, exist_ok=False)
@@ -52,6 +55,8 @@ def emit(schedule_path, output_dir):
               'schedule': str((destination / 'schedule.json').relative_to(ROOT)),
               'assessment': str((destination / 'assessment.json').relative_to(ROOT)),
               'source_sha256': lowering.source_sha256}
+    if action is not None:
+        record['author_action_stage'] = action
     (destination / 'receipt.json').write_text(json.dumps(record, indent=2) + '\n')
     return str((destination / 'receipt.json').relative_to(ROOT))
 
@@ -61,7 +66,12 @@ def verify(receipt):
     record = json.loads(inside(receipt).read_text())
     if record['compiler_commit'] != PIN:
         raise ValueError('Compiler identity drift')
-    assessment = compiler().assess(json.loads(inside(record['schedule']).read_text()))
+    document = json.loads(inside(record['schedule']).read_text())
+    if 'author_action_stage' in record:
+        from campaign.compiler_tools import stage_origin
+        if stage_origin(ROOT, record['author_action_stage'], document) is None:
+            raise ValueError('Declared transform stage is outside the tool records')
+    assessment = compiler().assess(document)
     lowered = compiler().lower(assessment)
     actual = inside(record['source']).read_text()
     if actual != lowered.source or record['entry_point'] != lowered.route.entry_point:

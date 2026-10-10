@@ -13,6 +13,7 @@ from development_binding import git, reconcile
 R = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(R))
 from campaign.launch import author_entry
+from campaign.compiler_tools import catalog
 
 
 def validate_nominee(root, binding, best, environment, stop):
@@ -112,6 +113,7 @@ def main(root=R, check=False):
     os.chdir(root)
     binding = reconcile(root)
     entry, environment = author_entry(binding)
+    catalog(root)
     if check:
         print('Prepared development contract and absolute author entry are available')
         return 0

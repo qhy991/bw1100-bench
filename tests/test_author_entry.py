@@ -30,7 +30,8 @@ class AuthorEntryTests(unittest.TestCase):
 
     def process(self, code):
         result = subprocess.run([str(self.python), '-c', code, str(ROOT), str(self.run), str(self.root)],
-                                env=self.env, check=True, text=True, capture_output=True, timeout=10)
+                                env=self.env, text=True, capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return json.loads(result.stdout.splitlines()[-1])
 
     def test_sibling_entry_works_without_path_entry_and_keeps_environment_bin(self):
@@ -45,6 +46,7 @@ from campaign import launch
 launch.ROOT=Path(sys.argv[2])
 binding={'home':sys.argv[3],'hcu':1}
 launch.reconcile=lambda root:binding
+launch.catalog=lambda root:{}
 missing_on_path=shutil.which('hmz') is None
 sys.argv=['launch','--check']
 launch.main()

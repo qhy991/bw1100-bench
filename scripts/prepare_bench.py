@@ -127,12 +127,13 @@ def prepare(plan_path, routing_path, host, output):
         (run / 'campaign/budget.yaml').write_text('budget:\n  hours: 3\n')
         (run / 'campaign/JOURNAL.md').write_text('# Own Bench search journal\n')
         (run / 'campaign/EVOLUTION.md').write_text('# Compiler leads from this Run\n')
+        subprocess.run([sys.executable, str(run / 'campaign/compiler_tools.py'), 'freeze'], check=True)
         with (run / '.gitignore').open('a') as stream:
             stream.write('\n# Per-Run artifacts are retained locally, never source controls.\n')
-            for name in ('candidates/', 'evaluations/', 'results/', 'logs/', 'schedules/', 'management/', 'generated/', 'final-confirmation/', 'deadline.json', 'intake.json', 'profile-intake.json', 'controller-status.json', 'ENDPOINT.json', 'DONE.json', 'JOURNAL.md', 'EVOLUTION.md'):
+            for name in ('candidates/', 'evaluations/', 'results/', 'logs/', 'schedules/', 'management/', 'generated/', 'compiler-actions/', 'final-confirmation/', 'deadline.json', 'intake.json', 'profile-intake.json', 'controller-status.json', 'ENDPOINT.json', 'DONE.json', 'JOURNAL.md', 'EVOLUTION.md'):
                 stream.write('campaign/' + name + '\n')
         subprocess.run(['git', '-C', str(run), 'add', '.gitignore', *GATEWAY_FILES,
-                        'campaign/frozen-plan.json', 'campaign/frozen-routing.json', 'campaign/binding.json', 'campaign/groups/c.json', 'campaign/budget.yaml'], check=True)
+                        'campaign/frozen-plan.json', 'campaign/frozen-routing.json', 'campaign/binding.json', 'campaign/groups/c.json', 'campaign/budget.yaml', 'campaign/compiler-api.json'], check=True)
         subprocess.run(['git', '-C', str(run), 'commit', '-qm', 'Prepare frozen fresh Bench author allocation'], check=True)
         records.append({**binding, 'prepared_commit': git(run, 'rev-parse', 'HEAD')})
     # The queue consumes this create-only host subset in the global randomized order.

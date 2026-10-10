@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+from compiler_fixture import add_catalog
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -110,7 +111,7 @@ class Compiler:
   buffer=SimpleNamespace(name='x',shape=(1,),dtype=SimpleNamespace(value='fp32'),mode=SimpleNamespace(value='input'),space=SimpleNamespace(value='global'))
   return SimpleNamespace(lowering_eligible=True,target='gfx938',typed_schedule=SimpleNamespace(buffers=[buffer]))
  def lower(self, assessment):return SimpleNamespace(source='generated')
-frontend=SimpleNamespace(parse=lambda source:SimpleNamespace(document={}))
+frontend=SimpleNamespace(parse=lambda source:SimpleNamespace(document={}),read_schedule=lambda path:SimpleNamespace(document={}))
 ''')
         (package / 'tasks/workloads.py').write_text('''from types import SimpleNamespace
 CASES=['primary','zeros','near_zero','alternating','mixed_magnitude']
@@ -121,6 +122,7 @@ class WorkloadContract:
  def __init__(self, document):self.document=document;self.case_ids=document['case_ids']
  def tensor_abi(self, case):return [SimpleNamespace(**row) for row in self.document['abi']]
 ''')
+        add_catalog(compiler)
         adapter_pin, compiler_pin = initialize(adapter), initialize(compiler)
         plan, contracts = allocation(self.root, adapter_pin, compiler_pin)
         (self.root / 'seed.py').write_text('# retained historical source, not a qualification\n')
@@ -179,6 +181,22 @@ class WorkloadContract:
         git(run, 'commit', '-qm', 'Replace inherited material fixture')
         with self.assertRaisesRegex(ValueError, 'source changed after Run intake'):
             reconcile(run)
+
+    def test_inherited_schedule_json_keeps_its_format_and_frozen_provenance(self):
+        adapter, plan, contracts = self.sources()
+        source = self.root / 'seed.json'
+        source.write_text('{"schema_version": 2}')
+        for row in plan['assignments']:
+            row['inherited']['source'] = str(source)
+        write(self.root / 'plan.json', plan)
+        rows = self.prepare(adapter)
+        for row in rows:
+            run = Path(row['root'])
+            self.assertEqual(reconcile(run)['compiler'], plan['compiler'])
+            self.assertEqual((run / 'campaign/inherited/candidate.json').read_bytes(), source.read_bytes())
+            self.assertFalse((run / 'campaign/inherited/candidate.py').exists())
+            provenance = json.loads((run / 'campaign/inherited/provenance.json').read_text())
+            self.assertEqual(provenance['source'], 'campaign/inherited/candidate.json')
 
     def test_whole_workload_drift_or_unselected_disposition_creates_no_run(self):
         adapter, plan, contracts = self.sources()
