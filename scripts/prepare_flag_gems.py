@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TARGET = ROOT / ".deps/flag_gems_src_540_node2"
 ARCHIVE_SHA256 = "b06d741b4d1f2978a539c38ced0ec41d1621455e5dec38b6350e5c9943dcda39"
 SOURCE_HASHES = {
+    "flag_gems/runtime/backend/_hygon/ops/gelu.py": "025ffb1a126d82d9850f310a099d2abfe9e648ba462176b6073aada999d035f1",
     "flag_gems/fused/gelu_and_mul.py": "5a21e5f2994c8a0b88d4676b99b1f1621891e55b1527ebe64d90f6ab7857a532",
     "flag_gems/ops/argsort.py": "6f3aba9e7e58b770edcac1879525500a8b2991c960e4baddffd48a5f1c81361c",
     "flag_gems/ops/sort.py": "ce08520220ddd5f64c612a6ee4bce2393eb9747a836485e7bb1ec1de7029de6d",
