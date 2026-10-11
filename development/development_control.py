@@ -13,6 +13,7 @@ def released(root):
     pending = [path for top in (root / 'campaign', root / '.local') for path in top.rglob('*.json')
                if not any(name in path.parts for name in ('triton-cache', 'aiter-jit-cache'))]
     seen = set()
+    jobs = {}
     while pending:
         path = pending.pop()
         if path in seen:
@@ -45,9 +46,16 @@ def released(root):
                 pending.append(referenced)
             if record.get('schema') != 'bw1100-bench.hcu-admission.v1':
                 continue
-            if 'completed_at' in record:
+            job_id = record.get('job_id')
+            if not isinstance(job_id, str) or not job_id:
+                return False
+            job = jobs.setdefault(job_id, {'admissions': [], 'terminals': []})
+            required = ('completed_at', 'exit_code', 'container_still_running', 'after_vram', 'after_kfd_visible')
+            if path.name.endswith('-terminal.json') or any(key in record for key in (
+                    *required, 'status', 'reason', 'runtime_error_marker', 'release_observations')):
                 after = record
             else:
+                job['admissions'].append(record)
                 terminal = path.with_name(path.stem + '-terminal.json')
                 if terminal.is_symlink():
                     return False
@@ -55,13 +63,16 @@ def released(root):
                     after = json.loads(terminal.read_text())
                 except (OSError, ValueError):
                     return False
-            if (not isinstance(record.get('job_id'), str) or not record['job_id']
-                    or not isinstance(after, dict) or after.get('schema') != record['schema']
-                    or after.get('job_id') != record['job_id']
-                    or 'completed_at' not in after or 'exit_code' not in after
+            if (not isinstance(after, dict) or after.get('schema') != record['schema']
+                    or after.get('job_id') != job_id or any(key not in after for key in required)
                     or after.get('container_still_running') is not False
                     or after.get('after_vram') != '0%' or after.get('after_kfd_visible') is not False):
                 return False
+            job['terminals'].append(after)
+    for job in jobs.values():
+        if any(any(key not in terminal or terminal[key] != value for key, value in admission.items())
+               for admission in job['admissions'] for terminal in job['terminals']):
+            return False
     return True
 
 

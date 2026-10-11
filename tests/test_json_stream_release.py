@@ -107,6 +107,41 @@ class StreamReleaseTests(unittest.TestCase):
         self.path.write_text('{}\n' + json.dumps(terminal(after_vram='2%')))
         self.gates(False)
 
+    def test_terminal_preserves_every_initial_identity_and_request_value(self):
+        initial = dict(admission(), selected_hcu=2, runtime_device_binding={'pci_bus_id': 'fixture-pci'},
+                       image_id='fixture-image', started_at=123, command=['python', 'candidate.py'], timeout_s=600)
+        write(self.root / 'campaign/admission.json', initial)
+        original = dict(initial, **{key: value for key, value in terminal().items() if key not in initial})
+        after = self.root / 'campaign/admission-terminal.json'
+        write(after, original)
+        self.gates(True)
+        for key, value in (('selected_hcu', 3), ('runtime_device_binding', {'pci_bus_id': 'other-pci'}),
+                           ('image_id', 'other-image'), ('started_at', 124),
+                           ('command', ['different.py']), ('timeout_s', 900)):
+            with self.subTest(key=key):
+                write(after, dict(original, **{key: value}))
+                self.gates(False)
+
+    def test_partial_canonical_terminal_cannot_hide_beside_complete_terminal(self):
+        write(self.root / 'campaign/admission.json', admission())
+        write(self.root / 'campaign/admission-terminal.json', terminal())
+        extra = self.root / 'campaign/other-terminal.json'
+        for value in ({key: value for key, value in terminal().items() if key != 'exit_code'},
+                      dict(admission(), status='completed'), admission()):
+            with self.subTest(value=value):
+                write(extra, value)
+                self.gates(False)
+                self.assertIn('partial_terminal', {issue['reason'] for issue in release_audit(self.root)['issues']})
+
+    def test_newly_declared_extensionless_references_are_exhausted(self):
+        self.path.write_text('{}\n' + json.dumps({'admission_receipts': ['campaign/first']}))
+        write(self.root / 'campaign/first', {'admission_receipts': ['campaign/second']})
+        self.gates(False)
+        write(self.root / 'campaign/second', admission())
+        self.gates(False)
+        write(self.root / 'campaign/second-terminal.json', terminal())
+        self.gates(True)
+
     def test_owner_closure_confirms_complete_stream_and_stops_on_partial(self):
         sys.path.insert(0, str(ROOT / 'development'))
         spec = importlib.util.spec_from_file_location('stream_owner_fixture', ROOT / 'development/development_launch.py')
