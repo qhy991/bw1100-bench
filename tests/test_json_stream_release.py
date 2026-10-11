@@ -163,6 +163,7 @@ class StreamReleaseTests(unittest.TestCase):
             previous = Path.cwd()
             try:
                 with patch.object(launch, 'reconcile', return_value=binding), \
+                     patch.object(launch, 'catalog', return_value={}), \
                      patch.object(launch, 'author_entry', return_value=(Path('/fixture/hmz'), {})), \
                      patch.object(launch, 'git', return_value='prepared'), \
                      patch.object(launch.subprocess, 'check_output', return_value='profile'), \
