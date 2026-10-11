@@ -11,6 +11,7 @@ C = R / '.deps/cake-ir'
 sys.path.insert(0, str(C / 'src'))
 sys.path.insert(0, str(R))
 from open_cake_ir.compiler import Compiler, frontend
+from open_cake_ir import compiler as compiler_api
 from open_cake_ir.tasks.workloads import load_workload
 from open_cake_ir.evaluation.core import compare_tile_outputs
 from development_binding import reconcile
@@ -132,6 +133,7 @@ if a.phase in ('emit', 'validate'):
     except Exception as error:
         if a.phase == 'emit' and not (folder / 'outcome.json').exists():
             refused = (isinstance(error, CandidateRefusal)
+                or stage == 'assessment' and isinstance(error, getattr(compiler_api, 'ScheduleEnvelopeError', ()))
                 or stage == 'frontend' and isinstance(error, frontend.FrontendError)
                 or stage == 'json' and isinstance(error, json.JSONDecodeError)
                 or stage == 'decode' and isinstance(error, UnicodeDecodeError))

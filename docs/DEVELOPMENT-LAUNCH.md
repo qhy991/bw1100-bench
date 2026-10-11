@@ -41,7 +41,10 @@ edit to the author's file cannot change that attempt. Successfully constructed i
 also retain the existing `candidate.py` or `candidate.json` used by validation.
 
 Known frontend, JSON and encoding errors, and explicit Target/ABI mismatches, produce
-a create-only `refused` outcome without device admission. Other Compiler or I/O errors
+a create-only `refused` outcome without device admission. A Compiler that exports
+`ScheduleEnvelopeError` also identifies a malformed Schedule envelope during assessment
+as a refusal. Older Compilers without that export keep their schema errors unknown.
+The typed error does not classify failures in other evaluation stages. Other Compiler or I/O errors
 produce `evaluation_error` diagnostics and a nonzero exit; an untyped `CompilerError`
 does not establish candidate fault. No assessment is fabricated when construction did
 not produce one. Validation remains read-only, and repeated result writes are refused.

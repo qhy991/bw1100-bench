@@ -95,18 +95,48 @@ Path('campaign/deadline.json').write_text(json.dumps(dict(search_stop_at_epoch=1
                     self.assertIn('location', outcome['error'])
                     self.assertEqual(outcome['error']['location']['filename'], str(self.root / 'input.py'))
 
-    def test_untyped_schema_and_compiler_errors_are_not_candidate_refusals(self):
-        for identity, payload, injection in [
-            ('schema', b'{}', ''),
-            ('internal-assessment', (self.root / 'valid.json').read_bytes(),
-             "from open_cake_ir.compiler import Compiler\nfrom open_cake_ir.compiler.errors import CompilerError\ndef fail(*a): raise CompilerError('opaque internal assessment error')\nCompiler.assess=fail\n")]:
-            result, folder = self.evaluate(payload, suffix='.json', identity=identity, injection=injection)
-            self.assertNotEqual(result.returncode, 0)
+    def test_schedule_envelope_uses_the_compilers_explicit_error_type(self):
+        typed = self.process("from open_cake_ir import compiler\nprint(hasattr(compiler,'ScheduleEnvelopeError'))\n").stdout.strip() == 'True'
+        both_routes = json.loads((self.root / 'valid.json').read_text())
+        both_routes['grid'] = [1, 1, 1]
+        for identity, payload in [('schema', b'{}'), ('routes', json.dumps(both_routes).encode())]:
+            result, folder = self.evaluate(payload, suffix='.json', identity=identity)
+            self.assertEqual(result.returncode == 0, typed, result.stderr)
             self.assertEqual((folder / 'submitted.source').read_bytes(), payload)
             outcome = json.loads((folder / 'outcome.json').read_text())
-            self.assertEqual((outcome['status'], outcome['stage']), ('evaluation_error', 'assessment'))
+            self.assertEqual((outcome['status'], outcome['stage']),
+                             ('refused' if typed else 'evaluation_error', 'assessment'))
+            self.assertEqual(outcome['error']['type'], 'ScheduleEnvelopeError' if typed else 'CompilerError')
             self.assertFalse((folder / 'assessment.json').exists())
             self.assertFalse((folder / 'emission.json').exists())
+
+    def test_missing_optional_export_keeps_schema_error_unknown(self):
+        injection = "from open_cake_ir import compiler\nif hasattr(compiler,'ScheduleEnvelopeError'): del compiler.ScheduleEnvelopeError\n"
+        result, folder = self.evaluate(b'{}', suffix='.json', injection=injection)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual((folder / 'submitted.source').read_bytes(), b'{}')
+        outcome = json.loads((folder / 'outcome.json').read_text())
+        self.assertEqual((outcome['status'], outcome['stage']), ('evaluation_error', 'assessment'))
+        self.assertFalse((folder / 'assessment.json').exists())
+        self.assertFalse((folder / 'emission.json').exists())
+
+    def test_opaque_compiler_error_is_unknown_even_with_an_envelope_message(self):
+        injection = "from open_cake_ir.compiler import Compiler, CompilerError\ndef fail(*a): raise CompilerError('schedule root fields or schema_version differ')\nCompiler.assess=fail\n"
+        result, folder = self.evaluate(injection=injection)
+        self.assertNotEqual(result.returncode, 0)
+        outcome = json.loads((folder / 'outcome.json').read_text())
+        self.assertEqual((outcome['status'], outcome['stage']), ('evaluation_error', 'assessment'))
+        self.assertFalse((folder / 'emission.json').exists())
+
+    def test_typed_envelope_error_outside_assessment_remains_unknown(self):
+        if self.process("from open_cake_ir import compiler\nprint(hasattr(compiler,'ScheduleEnvelopeError'))\n").stdout.strip() != 'True':
+            self.skipTest('This Compiler does not export ScheduleEnvelopeError')
+        injection = "from open_cake_ir.compiler import Compiler, ScheduleEnvelopeError\ndef fail(*a): raise ScheduleEnvelopeError('outside assessment')\nCompiler.lower=fail\n"
+        result, folder = self.evaluate(injection=injection)
+        self.assertNotEqual(result.returncode, 0)
+        outcome = json.loads((folder / 'outcome.json').read_text())
+        self.assertEqual((outcome['status'], outcome['stage']), ('evaluation_error', 'lowering'))
+        self.assertFalse((folder / 'emission.json').exists())
 
     def test_task_target_and_abi_refusals_keep_actual_assessment(self):
         for identity, raw, stage in [
