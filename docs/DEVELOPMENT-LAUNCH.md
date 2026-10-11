@@ -22,11 +22,13 @@ The private plan contains:
   `reference_access: known_kernel_reproduction_with_declared_development_incumbent`.
 - `hosts`: each host's explicit qualified HCU subset, home, owner root, clean Compiler
   root, immutable image, gateway root/commit, and bounded `start_window_seconds`.
-- `assignments`: exactly the original 53 distinct tasks, each with its host, fixed HCU,
-  fresh root, and `inherited` source file, historical Compiler, candidate ID, candidate
-  path and endpoint path. Keep these operational paths in private experiment records.
+- Optional `task_ids`: an explicit nonempty, unique subset of the original 53 task
+  identities. Omitting this field continues to select all 53 tasks.
+- `assignments`: exactly the selected tasks, once each, with host, fixed HCU, fresh
+  root, and `inherited` source file, historical Compiler, candidate ID, candidate path
+  and endpoint path. Keep these operational paths in private experiment records.
 
-The original contracts file contains `tasks` with each task's rows, columns, depth,
+The original contracts file always contains all 53 `tasks` with rows, columns, depth,
 case IDs, ABI and whole Workload. Preparation compares the selected Compiler's factory
 output, every case ABI and both starter/inherited emission against these inputs.
 It preserves the historical candidate in `campaign/inherited/` with provenance.

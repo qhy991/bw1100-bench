@@ -2,6 +2,7 @@
 from pathlib import Path
 import json
 import os
+import re
 import time
 
 
@@ -46,6 +47,7 @@ def device_failure_is_infrastructure(folder):
         'timed out waiting for this HCU lock', 'permission denied while trying to connect to the Docker',
         'Cannot connect to the Docker daemon', 'could not select device driver',
     )
-    if any(signature.lower() in log.lower() for signature in signatures):
+    if (any(signature.lower() in log.lower() for signature in signatures)
+            or re.search(r'\bdevice with id=[0-9]+ is unavailable\b', log, re.IGNORECASE)):
         return 'device runtime or admission service failed; see retained device.log'
     return None
