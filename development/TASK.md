@@ -56,7 +56,8 @@ model calls, queue waits, correctness, timing and profiling all count. Tokens ar
 only, with no total/per-turn cap. Read the deadline before each device request; no new work
 may exceed the search cutoff. Do not invoke owner confirmation or alter ENDPOINT/DONE.
 
-The host coordinator owns the static author slots in this finite 53-Task allocation:
+The host coordinator owns the static author slots in the frozen allocation in
+campaign/development-plan.json:
 one author per assigned HCU. CPU/model work on disjoint assigned HCUs can overlap.
 The HCU stop-file path in development-binding.json stops new admissions on that HCU.
 On an infrastructure or release
@@ -65,8 +66,12 @@ host/device visibility. Do not add sitecustomize or create device nodes. Every d
 queue; zero HCU utilization is not permission to bypass an owned allocation. Do not touch
 HCU0, run raw GPU Docker, create an allocator, or kill other jobs. Queue timeout/busy is a
 resource observation, not an IR defect. Other users' physical activity is not excluded.
-For profiling set HIP_VISIBLE_DEVICES to binding.hcu, BWBENCH_QUEUE_TIMEOUT=300,
-BWBENCH_TIMEOUT=600 and BWBENCH_LATEST_START_EPOCH=search_stop_at_epoch-630.
+For profiling, set HIP_VISIBLE_DEVICES to binding.hcu only for the host-side
+scripts/rocprof.sh wrapper. Inside the admitted single-device container, keep the
+gateway-established logical device; never override it with the physical HCU ordinal.
+Set BWBENCH_QUEUE_TIMEOUT=300, BWBENCH_TIMEOUT=600 and
+BWBENCH_LATEST_START_EPOCH=search_stop_at_epoch-630. Read the exact image value from
+campaign/development-binding.json; do not reconstruct or manually retype its digest.
 
 Keep concise hypothesis/evidence/next-step notes in JOURNAL.md. Record owning-layer leads
 and counterexamples in JOURNAL/EVOLUTION.md and HANDOFF.md. Separate candidate errors,

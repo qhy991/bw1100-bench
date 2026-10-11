@@ -10,7 +10,7 @@ ADAPTER_SCRIPTS = ('development_binding.py', 'development_control.py', 'developm
                    'development_prepare.py', 'development_stop.py', 'ralph_flow.py')
 SHARED_SCRIPTS = ('campaign/compiler_tools.py', 'campaign/_compiler_tools.py',
                   'campaign/compiler-tools-source.json', 'campaign/launch.py', 'campaign/binding.py', 'scripts/bench_queue.py',
-                  'scripts/ralph_profile_intake.py')
+                  'scripts/ralph_profile_intake.py', 'scripts/json_stream.py')
 BUDGET = 'budget:\n  hours: 3\n'
 
 
@@ -67,8 +67,13 @@ def validate_plan(plan, contracts):
         raise ValueError('Declare the canonical starter and inherited development material')
     tasks = contracts['tasks']
     rows = plan['assignments']
-    if len(tasks) != 53 or len(rows) != 53 or {row['task'] for row in rows} != set(tasks):
-        raise ValueError('Assign every original development task exactly once')
+    selected = plan.get('task_ids', list(tasks))
+    if (len(tasks) != 53 or not isinstance(selected, list) or not selected
+            or any(not isinstance(task, str) for task in selected)
+            or len(set(selected)) != len(selected) or not set(selected) <= set(tasks)):
+        raise ValueError('Select a nonempty unique subset of the intact 53 original tasks')
+    if len(rows) != len(selected) or {row['task'] for row in rows} != set(selected):
+        raise ValueError('Assign every selected development task exactly once')
     if len({row['root'] for row in rows}) != len(rows):
         raise ValueError('Every development Run needs a unique fresh root')
     for host, config in plan['hosts'].items():

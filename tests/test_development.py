@@ -131,6 +131,41 @@ class WorkloadContract:
         write(self.root / 'disposition.json', {'selected_compiler': compiler_pin, 'basis': 'CPU fixture'})
         return adapter, plan, contracts
 
+    def test_explicit_six_task_subset_and_assignment_rejections(self):
+        adapter, plan, contracts = self.sources()
+        plan['task_ids'] = list(contracts['tasks'])[:6]
+        plan['assignments'] = plan['assignments'][:6]
+        for index, row in enumerate(plan['assignments']):
+            row.update(host='first', hcu=1 + index % 2)
+        validate_plan(plan, contracts)
+        for change in ('empty', 'duplicate', 'unknown', 'missing_assignment', 'extra_assignment',
+                       'duplicate_assignment', 'implicit_subset', 'non_list'):
+            bad = copy.deepcopy(plan)
+            if change == 'empty': bad['task_ids'] = []
+            if change == 'duplicate': bad['task_ids'].append(bad['task_ids'][0])
+            if change == 'unknown': bad['task_ids'][0] = 'not_canonical'
+            if change == 'missing_assignment': bad['assignments'].pop()
+            if change == 'extra_assignment': bad['assignments'].append(allocation(self.root)[0]['assignments'][6])
+            if change == 'duplicate_assignment': bad['assignments'][-1] = bad['assignments'][0]
+            if change == 'implicit_subset': bad.pop('task_ids')
+            if change == 'non_list': bad['task_ids'] = 'task_0'
+            write(self.root / 'plan.json', bad)
+            with self.subTest(change=change), self.assertRaises(ValueError): self.prepare(adapter)
+            self.assertFalse((self.root / 'runs').exists())
+        write(self.root / 'plan.json', plan)
+        rows = self.prepare(adapter)
+        self.assertEqual(len(rows), 6)
+        self.assertEqual({row['task'] for row in rows}, set(plan['task_ids']))
+        self.assertEqual(len(list((self.root / 'runs').iterdir())), 6)
+        for row in rows:
+            run = Path(row['root'])
+            self.assertEqual(reconcile(run)['case_ids'], CASES)
+            self.assertEqual(json.loads((run / 'campaign/original-workload.json').read_text()),
+                             contracts['tasks'][row['task']]['workload'])
+            self.assertEqual(row['wall_time_seconds'], 10800)
+            self.assertFalse((run / 'campaign/deadline.json').exists())
+            self.assertFalse(list((run / 'campaign/evaluations').iterdir()))
+
     def prepare(self, adapter):
         with patch.object(prepare, 'ROOT', adapter):
             return prepare.prepare(self.root / 'plan.json', self.root / 'contracts.json',
@@ -163,7 +198,8 @@ class WorkloadContract:
         self.assertFalse((Path(rows[0]['root']) / 'campaign/deadline.json').exists())
         self.assertFalse((Path(rows[0]['root']) / 'campaign/intake.json').exists())
         run = Path(rows[0]['root'])
-        for name in ('campaign/development_control.py', 'campaign/launch.py', 'campaign/TASK.md', 'AGENTS.md'):
+        for name in ('campaign/development_control.py', 'campaign/launch.py', 'scripts/json_stream.py',
+                     'campaign/TASK.md', 'AGENTS.md'):
             original = (run / name).read_text()
             (run / name).write_text(original + '\n# changed after preparation\n')
             git(run, 'add', name)
@@ -210,6 +246,15 @@ class WorkloadContract:
         self.assertFalse((self.root / 'runs').exists())
 
     def test_real_queue_keeps_failed_receipt_and_allows_other_hcu(self):
+        self.queue_case()
+
+    def test_complete_stream_allows_next_same_hcu_author(self):
+        self.queue_case('{}\n{"warning":"resource diagnostic"}\n[]', release_first=True)
+
+    def test_partial_stream_blocks_next_same_hcu_author(self):
+        self.queue_case('{}\n{"warning":"resource diagnostic"}\n[', release_first=True)
+
+    def queue_case(self, diagnostic=None, release_first=False):
         # Only the children are CPU fixture scripts; the Git checks and queue loop run.
         rows = []
         compiler = self.root / 'compiler'
@@ -226,7 +271,7 @@ class WorkloadContract:
                            batch_stop_file=str(self.root / 'owner' / ('STOP-hcu' + str(1 if index < 2 else 2) + '.json')))
             write(run / 'campaign/development-binding.json', binding)
             (run / '.gitignore').write_text('.deps/\ncampaign/logs/\ncampaign/admission*.json\ncampaign/DONE.json\n')
-            (run / 'campaign/development_launch.py').write_text('''import json,sys
+            script = '''import json,sys
 from pathlib import Path
 if sys.argv[1:]==['--check']:raise SystemExit(0)
 b=json.loads(Path('campaign/development-binding.json').read_text())
@@ -236,7 +281,12 @@ if b['hcu']==2:
  a.update(completed_at=1,exit_code=0,container_still_running=False,after_vram='0%',after_kfd_visible=False)
  Path('campaign/admission-terminal.json').write_text(json.dumps(a))
 Path('campaign/DONE.json').write_text(json.dumps(dict(terminal=True,status='completed',device_release_verified=b['hcu']==2)))
-''')
+'''
+            if release_first:
+                script = script.replace("if b['hcu']==2:", "if True:")
+            if diagnostic is not None:
+                script += "if b['hcu']==1:Path('campaign/resources.json').write_text(" + repr(diagnostic) + ")\n"
+            (run / 'campaign/development_launch.py').write_text(script)
             rows.append(dict(binding, prepared_commit=initialize(run)))
         path = self.root / 'allocation.json'
         write(path, dict(kind='registered_task_development', host='fixture',
@@ -246,9 +296,11 @@ Path('campaign/DONE.json').write_text(json.dumps(dict(terminal=True,status='comp
         with patch.object(queue.time, 'sleep', side_effect=lambda _: original_sleep(0.02)):
             queue.run(self.root / 'owner', path)
         status = json.loads((self.root / 'owner/STATUS.json').read_text())
-        self.assertEqual(status['pending'], ['task_1'])
-        self.assertEqual({row['task'] for row in status['finished']}, {'task_0', 'task_2'})
-        self.assertIn('1', status['blocked_hcus'])
+        complete = release_first and not diagnostic.endswith('[')
+        self.assertEqual(status['pending'], [] if complete else ['task_1'])
+        self.assertEqual({row['task'] for row in status['finished']},
+                         {'task_0', 'task_1', 'task_2'} if complete else {'task_0', 'task_2'})
+        self.assertEqual('1' in status['blocked_hcus'], not complete)
         self.assertNotIn('2', status['blocked_hcus'])
         with self.assertRaises(AssertionError): queue.run(self.root / 'owner', path)
 
