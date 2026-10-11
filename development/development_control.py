@@ -3,26 +3,63 @@ from pathlib import Path
 import json
 import math
 import re
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts.json_stream import read_json_stream
 
 
 def released(root):
-    for top in (root / 'campaign', root / '.local'):
-        for path in top.rglob('*.json'):
-            if path.name.endswith('-terminal.json') or any(
-                    name in path.parts for name in ('triton-cache', 'aiter-jit-cache')):
+    pending = [path for top in (root / 'campaign', root / '.local') for path in top.rglob('*.json')
+               if not any(name in path.parts for name in ('triton-cache', 'aiter-jit-cache'))]
+    seen = set()
+    while pending:
+        path = pending.pop()
+        if path in seen:
+            continue
+        seen.add(path)
+        if path.is_symlink():
+            return False
+        try:
+            records = ([json.loads(path.read_text())] if path.name.endswith('-terminal.json')
+                       else read_json_stream(path))
+        except (OSError, ValueError):
+            return False
+        for record in records:
+            if not isinstance(record, dict):
                 continue
-            try:
-                record = json.loads(path.read_text())
-            except (OSError, ValueError):
-                return False
-            if not isinstance(record, dict) or record.get('schema') != 'bw1100-bench.hcu-admission.v1' or 'completed_at' in record:
+            refs = record.get('admission_receipts', [])
+            for ref in refs if isinstance(refs, list) else ():
+                if not isinstance(ref, str):
+                    continue
+                referenced = root / ref
+                if referenced.is_symlink():
+                    return False
+                try:
+                    referenced = referenced.resolve()
+                    referenced.relative_to(root.resolve())
+                except (OSError, ValueError):
+                    return False
+                if not referenced.is_file():
+                    return False
+                pending.append(referenced)
+            if record.get('schema') != 'bw1100-bench.hcu-admission.v1':
                 continue
-            terminal = path.with_name(path.stem + '-terminal.json')
-            try:
-                after = json.loads(terminal.read_text())
-            except (OSError, ValueError):
-                return False
-            if (after.get('container_still_running') is not False
+            if 'completed_at' in record:
+                after = record
+            else:
+                terminal = path.with_name(path.stem + '-terminal.json')
+                if terminal.is_symlink():
+                    return False
+                try:
+                    after = json.loads(terminal.read_text())
+                except (OSError, ValueError):
+                    return False
+            if (not isinstance(record.get('job_id'), str) or not record['job_id']
+                    or not isinstance(after, dict) or after.get('schema') != record['schema']
+                    or after.get('job_id') != record['job_id']
+                    or 'completed_at' not in after or 'exit_code' not in after
+                    or after.get('container_still_running') is not False
                     or after.get('after_vram') != '0%' or after.get('after_kfd_visible') is not False):
                 return False
     return True

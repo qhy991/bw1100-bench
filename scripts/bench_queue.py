@@ -1,6 +1,8 @@
 """Finite author sequencer; the existing HCU gateway exclusively owns device admission."""
 from pathlib import Path
 import argparse,collections,fcntl,json,os,subprocess,sys,time
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from scripts.json_stream import read_json_stream
 ROOT = None
 
 def read(path):return json.loads(path.read_text())
@@ -12,16 +14,17 @@ def release_audit(root, preexisting_json=()):
   if str(p.relative_to(root)) in preexisting or p in seen:return
   seen.add(p)
   if p.is_symlink():issues.append({'file':str(p.relative_to(root)),'reason':'symlink_not_followed'});return
-  try:d=read(p)
+  try:records=[read(p)] if p.name.endswith('-terminal.json') else read_json_stream(p)
   except (ValueError,OSError):issues.append({'file':str(p.relative_to(root)),'reason':'unreadable_or_partial_record'});return
-  if not isinstance(d,dict):return
-  refs=d.get('admission_receipts',[])
-  if isinstance(refs,list):declared.update(x for x in refs if isinstance(x,str))
-  if d.get('schema')!='bw1100-bench.hcu-admission.v1':return
-  jid=d.get('job_id')
-  if not isinstance(jid,str) or not jid:issues.append({'file':str(p.relative_to(root)),'reason':'missing_job_id'});return
-  row=jobs.setdefault(jid,{'terminals':[],'records':[]});row['records'].append(str(p.relative_to(root)))
-  if all(k in d for k in ['completed_at','exit_code','container_still_running','after_vram','after_kfd_visible']):row['terminals'].append(d)
+  for d in records:
+   if not isinstance(d,dict):continue
+   refs=d.get('admission_receipts',[])
+   if isinstance(refs,list):declared.update(x for x in refs if isinstance(x,str))
+   if d.get('schema')!='bw1100-bench.hcu-admission.v1':continue
+   jid=d.get('job_id')
+   if not isinstance(jid,str) or not jid:issues.append({'file':str(p.relative_to(root)),'reason':'missing_job_id'});continue
+   row=jobs.setdefault(jid,{'terminals':[],'records':[]});row['records'].append(str(p.relative_to(root)))
+   if all(k in d for k in ['completed_at','exit_code','container_still_running','after_vram','after_kfd_visible']):row['terminals'].append(d)
  def walk_error(error):issues.append({'file':str(error.filename),'reason':'unreadable_directory'})
  for directory,dirs,files in os.walk(root,onerror=walk_error):
   dirs[:]=[x for x in dirs if x not in ['.git','.deps','.data','triton-cache','aiter-jit-cache','__pycache__']]
