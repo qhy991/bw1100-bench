@@ -34,6 +34,21 @@ The canonical starter is generated separately inside the new Run budget. Histori
 outcomes and samples are never copied into the new evaluations directory. Both starter
 and inherited source require new device qualification on all original cases.
 
+Each new emit attempt retains its exact input bytes in `submitted.source` before
+decoding, parsing, provenance checks or assessment. `submission.json` records the
+original relative path and suffix. The evaluator parses those captured bytes; a later
+edit to the author's file cannot change that attempt. Successfully constructed inputs
+also retain the existing `candidate.py` or `candidate.json` used by validation.
+
+Known frontend, JSON and encoding errors, and explicit Target/ABI mismatches, produce
+a create-only `refused` outcome without device admission. Other Compiler or I/O errors
+produce `evaluation_error` diagnostics and a nonzero exit; an untyped `CompilerError`
+does not establish candidate fault. No assessment is fabricated when construction did
+not produce one. Validation remains read-only, and repeated result writes are refused.
+The neutral raw-source extension avoids adding malformed JSON to release auditing.
+An original malformed JSON file elsewhere in the Run still follows the existing
+fail-closed release checks; this change does not relax those checks or repair old Runs.
+
 The prepared host allocation is consumed by the existing `scripts/bench_queue.py`
 with `--allocation` and `--state-directory` equal to the plan's owner root. Run it with
 the qualified hmz environment's Python. Before any queue reservation or Run deadline,
