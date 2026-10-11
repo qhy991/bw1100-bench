@@ -94,7 +94,7 @@ def prepare(plan_path, contracts_path, disposition_path, host, output):
                         *GATEWAY_FILES, 'campaign'], check=True)
         subprocess.run(['git', '-C', str(run), 'commit', '-qm', 'Prepare immutable registered development Task'], check=True)
         records.append(dict(binding, prepared_commit=git(run, 'rev-parse', 'HEAD')))
-    new_json(output, dict(kind=KIND, host=host, capacity_per_hcu=1,
+    new_json(output, dict(kind=KIND, host=host, capacity_per_hcu=plan['controls']['capacity_per_hcu'],
         start_window_seconds=config['start_window_seconds'], runs=records))
     return records
 

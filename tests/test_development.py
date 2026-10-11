@@ -74,17 +74,23 @@ class DevelopmentTests(unittest.TestCase):
     def test_complete_static_contract_and_explicit_version(self):
         plan, contracts = allocation(self.root)
         validate_plan(plan, contracts)
-        for change in ('duplicate', 'missing', 'unselected', 'hcu_zero', 'host_excluded', 'two_authors', 'budget'):
+        for change in ('duplicate', 'missing', 'unselected', 'hcu_zero', 'host_excluded', 'invalid_authors', 'budget'):
             bad = copy.deepcopy(plan)
             if change == 'duplicate': bad['assignments'][-1] = bad['assignments'][0]
             if change == 'missing': bad['assignments'].pop()
             if change == 'unselected': bad['compiler'] = None
             if change == 'hcu_zero': bad['assignments'][0]['hcu'] = 0
             if change == 'host_excluded': bad['assignments'][2]['hcu'] = 1
-            if change == 'two_authors': bad['controls']['capacity_per_hcu'] = 2
+            if change == 'invalid_authors': bad['controls']['capacity_per_hcu'] = 4
             if change == 'budget': bad['controls']['search_seconds'] = 9100
             with self.subTest(change=change), self.assertRaises(ValueError):
                 validate_plan(bad, contracts)
+
+    def test_explicit_author_capacity(self):
+        plan, contracts = allocation(self.root)
+        for capacity in (1, 2, 3):
+            plan['controls']['capacity_per_hcu'] = capacity
+            validate_plan(plan, contracts)
 
     def sources(self):
         adapter = self.root / 'adapter'
@@ -173,7 +179,10 @@ class WorkloadContract:
 
     def test_real_git_preparation_preserves_separate_material_and_contract(self):
         adapter, plan, contracts = self.sources()
+        plan['controls']['capacity_per_hcu'] = 2
+        write(self.root / 'plan.json', plan)
         rows = self.prepare(adapter)
+        self.assertEqual(json.loads((self.root / 'allocation.json').read_text())['capacity_per_hcu'], 2)
         self.assertEqual(len(rows), 2)
         for row in rows:
             run = Path(row['root'])

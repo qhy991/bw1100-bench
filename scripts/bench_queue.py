@@ -3,6 +3,7 @@ from pathlib import Path
 import argparse,collections,fcntl,json,os,subprocess,sys,time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.json_stream import read_json_stream
+from scripts.queue_handoff import UNKNOWN_EXIT, restore, validate_handoff
 ROOT = None
 
 def read(path):return json.loads(path.read_text())
@@ -59,14 +60,20 @@ def done_observation(path):
   return value,None
  except (ValueError,OSError) as error:return None,type(error).__name__
 
-def run(root, allocation):
+def run(root, allocation, handoff_path=None):
  global ROOT
  ROOT = root.resolve()
  ROOT.mkdir(parents=True, exist_ok=True)
- with (ROOT/'owner.lock').open('a') as lock:
+ assert not list(ROOT.glob('launch-*.json')) and not (ROOT/'LAUNCH.json').exists(),'Existing launch: inspect, never restart'
+ # A successor owner retains the same scheduler lock, with a fresh evidence namespace.
+ spec=read(allocation)
+ handoff=validate_handoff(read(handoff_path),spec,allocation) if handoff_path else None
+ lock_path=Path(handoff['scheduler_lock']) if handoff else ROOT/'owner.lock'
+ with lock_path.open('a') as lock:
   fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+  if handoff:validate_handoff(handoff,spec,allocation)
   assert not list(ROOT.glob('launch-*.json')) and not (ROOT/'LAUNCH.json').exists(),'Existing launch: inspect, never restart'
-  spec=read(allocation);pending=list(spec['runs']);children={};finished=[];attention=[];blocked={}
+  pending=list(spec['runs']);children={};finished=[];attention=[];blocked={}
   kind=spec.get('kind','bench')
   if kind not in ('bench','registered_task_development'):raise ValueError('Unsupported author allocation kind')
   development=kind=='registered_task_development'
@@ -75,28 +82,32 @@ def run(root, allocation):
   compiler_field='compiler' if development else 'compiler_commit'
   identity_field='task' if development else 'frozen_workspace'
   def run_id(row):return Path(row[identity_field]).name
-  hcus=sorted({r['hcu'] for r in pending});capacity=spec['capacity_per_hcu']
+  hcus=sorted({r['hcu'] for r in pending});capacity=handoff['capacity_per_hcu'] if handoff else spec['capacity_per_hcu']
   if not pending or len({r[identity_field] for r in pending})!=len(pending) or len({run_id(r) for r in pending})!=len(pending):raise ValueError('Expected unique nonempty host allocation')
-  if not 1<=capacity<=3 or any(h not in range(1,7) for h in hcus):raise ValueError('Unsupported author capacity or HCU')
-  if development and capacity!=1:raise ValueError('Development requires one author per HCU')
+  if type(capacity) is not int or not 1<=capacity<=3 or any(h not in range(1,7) for h in hcus):raise ValueError('Unsupported author capacity or HCU')
   if type(spec['start_window_seconds']) is not int or spec['start_window_seconds']<=0:raise ValueError('A positive frozen start window is required')
   if any(r['host']!=spec['host'] for r in pending):raise ValueError('Foreign host allocation')
   for r in pending:
-   if development and Path(r['batch_stop_file']).parent!=ROOT:raise ValueError('Development HCU stop files must use the allocated owner root')
+   if development and Path(r['batch_stop_file']).parent!=(Path(handoff['previous_owner_root']) if handoff else ROOT):raise ValueError('Development HCU stop files must use the allocated owner root')
    if read(Path(r['root'])/binding_file)!={k:v for k,v in r.items() if k!='prepared_commit'}:raise ValueError('Host subset differs from prepared binding')
-   if subprocess.check_output(['git','-C',r['root'],'rev-parse','HEAD'],text=True).strip()!=r['prepared_commit']:raise ValueError('Prepared source changed')
-   subprocess.run([sys.executable,entry,'--check'],cwd=r['root'],check=True)
-  started=time.time();stop=started+spec['start_window_seconds']
-  with (ROOT/'LAUNCH.json').open('x') as f:json.dump({'owner_pid':os.getpid(),'node_epoch':started,'maximum_runs':len(pending),'no_restarts':True,'host':spec['host'],'maximum_authors':len(hcus)*capacity},f,indent=2)
+   if not handoff or r[identity_field] in handoff['status']['pending']:
+    if subprocess.check_output(['git','-C',r['root'],'rev-parse','HEAD'],text=True).strip()!=r['prepared_commit']:raise ValueError('Prepared source changed')
+    subprocess.run([sys.executable,entry,'--check'],cwd=r['root'],check=True)
+  original_count=len(pending)
+  started=handoff['status']['started_node_epoch'] if handoff else time.time();stop=started+spec['start_window_seconds']
+  if handoff:
+   pending,children,finished,attention=restore(handoff,spec,ROOT)
+   with (ROOT/'HANDOFF.json').open('x') as f:json.dump(handoff,f,indent=2)
+  with (ROOT/'LAUNCH.json').open('x') as f:json.dump({'owner_pid':os.getpid(),'node_epoch':started,'coordinator_started_node_epoch':time.time(),'maximum_runs':original_count,'no_restarts':True,'host':spec['host'],'maximum_authors':len(hcus)*capacity,'handoff_from':handoff['previous_owner_root'] if handoff else None,'execution_policy_amendment':handoff['authorization'] if handoff else None},f,indent=2)
   def state(phase):
    atomic(ROOT/'STATUS.json',{'phase':phase,'owner_pid':os.getpid(),'node_epoch':time.time(),'started_node_epoch':started,'stop_new_at_node_epoch':stop,'host':spec['host'],'capacity_per_hcu':capacity,'running':[dict(r,pid=p.pid) for r,p in children.values()],'finished':finished,'pending':[r[identity_field] for r in pending],'release_attention':attention,'blocked_hcus':blocked,'scope':'author capacity only; HCU gateway owns all device locks and checks'})
   while True:
    for key,(r,p) in list(children.items()):
     code=p.poll()
     if code is None:continue
-    root=Path(r['root']);audit=release_audit(root,read(ROOT/r['source_json_inventory']));done,done_error=done_observation(root/'campaign/DONE.json');row=dict(r,exit_code=code,ended_node_epoch=time.time(),done=done,done_read_error=done_error,release_audit=audit)
+    root=Path(r['root']);audit=release_audit(root,read(ROOT/r['source_json_inventory']));done,done_error=done_observation(root/'campaign/DONE.json');row=dict(r,exit_code=None if code==UNKNOWN_EXIT else code,exit_status_observation=code if code==UNKNOWN_EXIT else 'parent_wait',ended_node_epoch=time.time(),done=done,done_read_error=done_error,release_audit=audit)
     finished.append(row);del children[key]
-    if audit['issues'] or done_error or code:attention.append({'id':run_id(r),'hcu':r['hcu'],'root':r['root'],**audit})
+    if audit['issues'] or done_error or (code!=UNKNOWN_EXIT and code):attention.append({'id':run_id(r),'hcu':r['hcu'],'root':r['root'],**audit})
    # Only canonical terminal receipts confirm release. An empty container list
    # cannot discharge missing, unreadable or contradictory release evidence.
    blocked={}
@@ -137,5 +148,6 @@ if __name__=='__main__':
  parser=argparse.ArgumentParser(description=__doc__)
  parser.add_argument('--allocation',required=True,type=Path)
  parser.add_argument('--state-directory',required=True,type=Path)
+ parser.add_argument('--handoff',type=Path)
  args=parser.parse_args()
- run(args.state_directory,args.allocation)
+ run(args.state_directory,args.allocation,args.handoff)
