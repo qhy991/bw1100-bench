@@ -1,5 +1,14 @@
 # bw1100-bench
 
+## GitHub Project tracking
+
+For newly authorized qhy991-managed work, follow the canonical
+[agent tracking policy](https://github.com/users/qhy991/projects/1) in the
+Project README. Read it before task work and perform its checkpoint updates
+through the authenticated GitHub CLI/API. This binding adds tracking metadata
+only; the repository's existing issue, lifecycle, resource, privacy and
+acceptance rules retain their authority.
+
 - `suite.json` owns the task selection, difficulty rationale, smoke UUIDs, default
   seed and number of correctness rounds. `sources.lock.json` owns upstream revisions.
 - Raw dataset and generated problems stay in ignored `.data/`. Never upload them,
