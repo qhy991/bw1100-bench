@@ -3,6 +3,7 @@ from pathlib import Path
 import argparse,collections,fcntl,json,os,subprocess,sys,time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.json_stream import read_json_stream
+from scripts.release_review import reviewed_logs
 from scripts.queue_handoff import UNKNOWN_EXIT, restore, validate_handoff
 ROOT = None
 
@@ -60,12 +61,14 @@ def done_observation(path):
   return value,None
  except (ValueError,OSError) as error:return None,type(error).__name__
 
-def run(root, allocation, handoff_path=None):
+def run(root, allocation, handoff_path=None, release_review_path=None):
  global ROOT
  ROOT = root.resolve()
  ROOT.mkdir(parents=True, exist_ok=True)
  assert not list(ROOT.glob('launch-*.json')) and not (ROOT/'LAUNCH.json').exists(),'Existing launch: inspect, never restart'
  # A successor owner retains the same scheduler lock, with a fresh evidence namespace.
+ review=read(release_review_path) if release_review_path else None
+ def audit_run(run,inventory):return release_audit(run,list(inventory)+reviewed_logs(run,review))
  spec=read(allocation)
  handoff=validate_handoff(read(handoff_path),spec,allocation) if handoff_path else None
  lock_path=Path(handoff['scheduler_lock']) if handoff else ROOT/'owner.lock'
@@ -97,6 +100,14 @@ def run(root, allocation, handoff_path=None):
   started=handoff['status']['started_node_epoch'] if handoff else time.time();stop=started+spec['start_window_seconds']
   if handoff:
    pending,children,finished,attention=restore(handoff,spec,ROOT)
+   if review:
+    reviewed=[]
+    for item in attention:
+     row=next(r for r in finished if r['root']==item['root'])
+     audit=audit_run(Path(item['root']),read(ROOT/row['source_json_inventory']))
+     reviewed.append(dict(original_attention=item,reviewed_audit=audit))
+    attention=[dict(item['original_attention'],**item['reviewed_audit']) for item in reviewed if item['reviewed_audit']['issues']]
+    with (ROOT/'RELEASE-REVIEW.json').open('x') as f:json.dump(dict(review=review,observations=reviewed),f,indent=2)
    with (ROOT/'HANDOFF.json').open('x') as f:json.dump(handoff,f,indent=2)
   with (ROOT/'LAUNCH.json').open('x') as f:json.dump({'owner_pid':os.getpid(),'node_epoch':started,'coordinator_started_node_epoch':time.time(),'maximum_runs':original_count,'no_restarts':True,'host':spec['host'],'maximum_authors':len(hcus)*capacity,'handoff_from':handoff['previous_owner_root'] if handoff else None,'execution_policy_amendment':handoff['authorization'] if handoff else None},f,indent=2)
   def state(phase):
@@ -105,7 +116,7 @@ def run(root, allocation, handoff_path=None):
    for key,(r,p) in list(children.items()):
     code=p.poll()
     if code is None:continue
-    root=Path(r['root']);audit=release_audit(root,read(ROOT/r['source_json_inventory']));done,done_error=done_observation(root/'campaign/DONE.json');row=dict(r,exit_code=None if code==UNKNOWN_EXIT else code,exit_status_observation=code if code==UNKNOWN_EXIT else 'parent_wait',ended_node_epoch=time.time(),done=done,done_read_error=done_error,release_audit=audit)
+    root=Path(r['root']);audit=audit_run(root,read(ROOT/r['source_json_inventory']));done,done_error=done_observation(root/'campaign/DONE.json');row=dict(r,exit_code=None if code==UNKNOWN_EXIT else code,exit_status_observation=code if code==UNKNOWN_EXIT else 'parent_wait',ended_node_epoch=time.time(),done=done,done_read_error=done_error,release_audit=audit)
     finished.append(row);del children[key]
     if audit['issues'] or done_error or (code!=UNKNOWN_EXIT and code):attention.append({'id':run_id(r),'hcu':r['hcu'],'root':r['root'],**audit})
    # Only canonical terminal receipts confirm release. An empty container list
@@ -149,5 +160,6 @@ if __name__=='__main__':
  parser.add_argument('--allocation',required=True,type=Path)
  parser.add_argument('--state-directory',required=True,type=Path)
  parser.add_argument('--handoff',type=Path)
+ parser.add_argument('--release-review',type=Path)
  args=parser.parse_args()
- run(args.state_directory,args.allocation,args.handoff)
+ run(args.state_directory,args.allocation,args.handoff,args.release_review)
