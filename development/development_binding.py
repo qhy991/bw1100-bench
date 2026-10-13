@@ -10,7 +10,8 @@ ADAPTER_SCRIPTS = ('development_binding.py', 'development_control.py', 'developm
                    'development_prepare.py', 'development_stop.py', 'ralph_flow.py')
 SHARED_SCRIPTS = ('campaign/compiler_tools.py', 'campaign/_compiler_tools.py',
                   'campaign/compiler-tools-source.json', 'campaign/launch.py', 'campaign/binding.py', 'scripts/bench_queue.py',
-                  'scripts/ralph_profile_intake.py', 'scripts/json_stream.py', 'scripts/queue_handoff.py')
+                  'scripts/ralph_profile_intake.py', 'scripts/json_stream.py', 'scripts/queue_handoff.py',
+                  'campaign/hip_probe.py', 'docs/NATIVE-EXPLORATION.md')
 BUDGET = 'budget:\n  hours: 3\n'
 
 
@@ -33,7 +34,10 @@ def render_agents():
     return '''# Registered Compiler-development Run
 The pinned Compiler Task, original Workload, all five cases and comparator own semantics.
 Read campaign/TASK.md, development-binding.json, deadline.json and profiling intake.
-Use campaign/development_evaluate_owner.py and the qualified HCU gateway only.
+Use campaign/development_evaluate_owner.py for Cake candidates and the qualified HCU gateway.
+For a demonstrated Cake expressibility or lowering gap, use campaign/hip_probe.py in this Run.
+Read docs/NATIVE-EXPLORATION.md. Retain a bounded HIP probe or its specific budget/infrastructure skip.
+Native engineering records never enter Cake nomination or confirmation.
 The canonical starter and declared inherited candidate are separate inputs; old outcomes are not inherited.
 The host owner assigns static author slots. Never modify its allocation, controls or terminal records.
 Do not inspect Bench artifacts or another Run. Never touch HCU0 or an unassigned device.

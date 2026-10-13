@@ -32,6 +32,7 @@ def main():
     parser.add_argument('--gate', required=True, type=Path)
     parser.add_argument('--output', required=True, type=Path)
     parser.add_argument('--samples', type=int, default=30)
+    parser.add_argument('--implementation-kind', choices=['native_hip'])
     args = parser.parse_args()
     intake = json.loads((ROOT / 'campaign/intake.json').read_text())
     plan = json.loads((ROOT / intake['plan']).read_text())
@@ -92,6 +93,8 @@ def main():
               'seed': 200, 'warmup_calls': 10, 'samples_per_direction': args.samples,
               'candidate_source_sha256': sha(args.candidate),
               'baseline_source_sha256': sha(baseline_path), 'rows': rows}
+    if args.implementation_kind:
+        result['implementation_kind'] = args.implementation_kind
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open('x') as stream:
         json.dump(result, stream, indent=2)

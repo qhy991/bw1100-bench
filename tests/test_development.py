@@ -95,7 +95,7 @@ class DevelopmentTests(unittest.TestCase):
     def sources(self):
         adapter = self.root / 'adapter'
         adapter.mkdir()
-        for name in ('campaign', 'development', 'scripts'):
+        for name in ('campaign', 'development', 'scripts', 'docs'):
             shutil.copytree(ROOT / name, adapter / name, ignore=shutil.ignore_patterns('__pycache__'))
         (adapter / 'scripts/hcu_device_identity.py').write_text('# CPU gateway fixture\n')
         shutil.copyfile(ROOT / '.gitignore', adapter / '.gitignore')

@@ -130,7 +130,7 @@ def prepare(plan_path, routing_path, host, output):
         subprocess.run([sys.executable, str(run / 'campaign/compiler_tools.py'), 'freeze'], check=True)
         with (run / '.gitignore').open('a') as stream:
             stream.write('\n# Per-Run artifacts are retained locally, never source controls.\n')
-            for name in ('candidates/', 'evaluations/', 'results/', 'logs/', 'schedules/', 'management/', 'generated/', 'compiler-actions/', 'final-confirmation/', 'deadline.json', 'intake.json', 'profile-intake.json', 'controller-status.json', 'ENDPOINT.json', 'DONE.json', 'JOURNAL.md', 'EVOLUTION.md'):
+            for name in ('candidates/', 'evaluations/', 'engineering/', 'results/', 'logs/', 'schedules/', 'management/', 'generated/', 'compiler-actions/', 'final-confirmation/', 'deadline.json', 'intake.json', 'profile-intake.json', 'controller-status.json', 'ENDPOINT.json', 'DONE.json', 'JOURNAL.md', 'EVOLUTION.md'):
                 stream.write('campaign/' + name + '\n')
         subprocess.run(['git', '-C', str(run), 'add', '.gitignore', *GATEWAY_FILES,
                         'campaign/frozen-plan.json', 'campaign/frozen-routing.json', 'campaign/binding.json', 'campaign/groups/c.json', 'campaign/budget.yaml', 'campaign/compiler-api.json'], check=True)

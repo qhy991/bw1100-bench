@@ -49,7 +49,7 @@ class RealCompilerToolsTests(unittest.TestCase):
         (self.root / '.deps').mkdir()
         (self.root / '.deps/cake-ir').symlink_to(self.source, target_is_directory=True)
         (self.root / 'campaign/candidates').mkdir(parents=True)
-        for name in ('compiler_tools.py', '_compiler_tools.py'):
+        for name in ('compiler_tools.py', '_compiler_tools.py', 'hip_probe.py'):
             shutil.copyfile(ROOT / 'campaign' / name, self.root / 'campaign' / name)
         shutil.copyfile(ROOT / 'campaign/cake_bridge.py', self.root / 'campaign/cake_bridge.py')
         (self.root / 'campaign/groups').mkdir()
@@ -204,7 +204,7 @@ else:
         source = Path(os.environ['BWBENCH_CONTROL_SOURCE']).resolve()
         pin = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
         (old / '.deps/cake-ir').symlink_to(source, target_is_directory=True)
-        for name in ('compiler_tools.py', '_compiler_tools.py'):
+        for name in ('compiler_tools.py', '_compiler_tools.py', 'hip_probe.py'):
             shutil.copyfile(ROOT / 'campaign' / name, old / 'campaign' / name)
         (old / 'campaign/binding.json').write_text(json.dumps(dict(compiler_commit=pin)))
         result = subprocess.run([sys.executable, 'campaign/compiler_tools.py', 'freeze'], cwd=old,
@@ -217,6 +217,9 @@ else:
         self.assertEqual(before['compiler_commit'], pin)
 
     def test_both_real_flow_functions_deliver_catalog_to_agent(self):
+        (self.root / 'campaign/engineering/own-native').mkdir(parents=True)
+        self.write('campaign/engineering/own-native/outcome.json',
+                   dict(id='own-native', status='failed', reason='retained native build failure'))
         for development in (False, True):
             with self.subTest(development=development):
                 flow = ROOT / ('development/ralph_flow.py' if development else 'campaign/ralph_flow.py')
@@ -248,6 +251,8 @@ print(json.dumps(calls))
                 self.assertIn('specialize_fp32_contraction', observed[0])
                 self.assertIn('row_tile', observed[0])
                 self.assertIn('Own transform observations', observed[0])
+                self.assertIn('Own native HIP explorations', observed[0])
+                self.assertIn('retained native build failure', observed[0])
 
 
 if __name__ == '__main__':
