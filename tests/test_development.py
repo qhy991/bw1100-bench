@@ -388,6 +388,12 @@ class DevelopmentTensorTests(unittest.TestCase):
         x = torch.tensor([1.0, 2.0])
         observed, _ = native_outputs(workload, 'primary', (x.clone(), x.clone()), 'cpu', (x,))
         self.assertEqual(set(observed), {'y', 'z'})
+        observed, _ = native_outputs(workload, 'primary', (x.clone() + 1, x.clone()),
+                                     'cpu', (x,), names=['z', 'y'])
+        self.assertEqual(observed, {'y': [1.0, 2.0], 'z': [2.0, 3.0]})
+        with self.assertRaises(ValueError):
+            native_outputs(workload, 'primary', (x.clone(), x.clone()),
+                           'cpu', (x,), names=['y', 'y'])
         for outputs in ((x.clone(),), (x.clone(), x.clone(), x.clone()),
                         (x.double(), x.clone()), (x.reshape(1, 2), x.clone()),
                         (x, x.clone()), (x.clone(), x.clone()[::2])):

@@ -34,11 +34,16 @@ def native_output_contract(workload, case_id, device='cuda:0'):
             for arg in workload.tensor_abi(case_id) if arg.mode == 'output'}
 
 
-def native_outputs(workload, case_id, output, device='cuda:0', inputs=()):
+def native_outputs(workload, case_id, output, device='cuda:0', inputs=(), names=None):
     expected = native_output_contract(workload, case_id, device)
     values = (output,) if isinstance(output, torch.Tensor) else output
     if not isinstance(values, (list, tuple)) or len(values) != len(expected):
         raise ValueError('Return count does not match the original Workload ABI')
+    if names is not None:
+        if len(names) != len(expected) or set(names) != set(expected):
+            raise ValueError('Cake emission outputs differ from the Workload ABI')
+        named = dict(zip(names, values, strict=True))
+        values = tuple(named[name] for name in expected)
     observed, metadata = {}, {}
     storages = [value.untyped_storage().data_ptr() for value in inputs if value.numel()]
     for (name, contract), value in zip(expected.items(), values, strict=True):
@@ -80,8 +85,6 @@ def main():
         fn = load_entry(R, manifest).run
     else:
         record = json.loads((R / args.emission).read_text())
-        if record['outputs'] != list(native_output_contract(workload, workload.case_ids[0])):
-            raise ValueError('Cake emission output order differs from the Workload ABI')
         spec = importlib.util.spec_from_file_location('own_generated', R / record['source'])
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
@@ -94,7 +97,8 @@ def main():
         values = {name: value.cuda() for name, value in case['tensors'].items()}
         out = fn(**values)
         torch.cuda.synchronize()
-        observed, metadata = native_outputs(workload, case['case_id'], out, inputs=values.values())
+        observed, metadata = native_outputs(workload, case['case_id'], out, inputs=values.values(),
+                                            names=None if args.native_manifest else record['outputs'])
         samples = []
         if case['case_id'] == 'primary':
             for _ in range(10):
