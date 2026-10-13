@@ -1,8 +1,8 @@
 # Bounded registered-task development
 
 `development/` maintains the existing external registered-Task adapter. It uses the
-selected Cake Compiler's original Workload, five cases and comparator. Its callable
-samples are diagnostic development evidence. They are not independent Bench scores.
+selected Cake Compiler's original Workload, all task-owned cases and comparator.
+Its callable samples are diagnostic development evidence. They are not independent Bench scores.
 The independent `campaign/` Bench evaluator and its community baselines are unchanged.
 
 After the completed Bench comparison has an explicit owner disposition, prepare one
@@ -22,19 +22,22 @@ The private plan contains:
   `reference_access: known_kernel_reproduction_with_declared_development_incumbent`.
 - `hosts`: each host's explicit qualified HCU subset, home, owner root, clean Compiler
   root, immutable image, gateway root/commit, and bounded `start_window_seconds`.
-- Optional `task_ids`: an explicit nonempty, unique subset of the original 53 task
-  identities. Omitting this field continues to select all 53 tasks.
+- Optional `task_ids`: an explicit nonempty, unique subset of the frozen contracts
+  task identities. Omitting this field selects the complete frozen contract set.
 - `assignments`: exactly the selected tasks, once each, with host, fixed HCU, fresh
-  root, and `inherited` source file, historical Compiler, candidate ID, candidate path
-  and endpoint path. Keep these operational paths in private experiment records.
+  root, and optional `inherited` source file, historical Compiler, candidate ID,
+  candidate path and endpoint path. Omit `inherited` for starter-only tasks. Keep
+  these operational paths in private experiment records.
 
-The original contracts file always contains all 53 `tasks` with rows, columns, depth,
-case IDs, ABI and whole Workload. Preparation compares the selected Compiler's factory
-output, every case ABI and both starter/inherited emission against these inputs.
-It preserves the historical candidate in `campaign/inherited/` with provenance.
-The canonical starter is generated separately inside the new Run budget. Historical
-outcomes and samples are never copied into the new evaluations directory. Both starter
-and inherited source require new device qualification on all original cases.
+The contracts file owns the complete frozen `tasks` set with rows, columns, depth,
+all task-owned case IDs, ABI and whole Workload. Preparation compares the selected
+Compiler's factory output and every case ABI against these inputs. When inherited
+material is declared, it preserves the historical candidate in `campaign/inherited/`
+with provenance. Starter-only tasks have no inherited material or provenance. The
+canonical starter is generated separately inside the new Run budget. Historical
+outcomes and samples are never copied into the new evaluations directory. Every
+submitted starter or inherited source requires new device qualification on all
+original task-owned cases.
 
 Each new emit attempt retains its exact input bytes in `submitted.source` before
 decoding, parsing, provenance checks or assessment. `submission.json` records the
