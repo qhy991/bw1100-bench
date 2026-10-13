@@ -10,7 +10,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from campaign.binding import GATEWAY_FILES, clean, git, read, validate_plan, validate_routing
+from campaign.binding import GATEWAY_FILES, clean, git, plan_conditions, read, validate_plan, validate_routing
 
 def gateway_sources(root, commit):
     sources = {}
@@ -70,7 +70,7 @@ def prepare(plan_path, routing_path, host, output):
         raise ValueError('A positive host start window is required')
     if not 1 <= config['capacity_per_hcu'] <= 3:
         raise ValueError('Author capacity must be explicit and at most three per HCU')
-    for condition in ('control', 'successor'):
+    for condition in plan_conditions(plan):
         clean(Path(config['compiler_roots'][condition]), plan['bindings'][condition]['commit'])
     sol = Path(config['sol_root'])
     clean(sol, read(ROOT / 'sources.lock.json')['sol_execbench']['revision'])
