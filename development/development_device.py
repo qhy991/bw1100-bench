@@ -45,7 +45,9 @@ def native_outputs(workload, case_id, output, device='cuda:0', inputs=(), names=
         named = dict(zip(names, values, strict=True))
         values = tuple(named[name] for name in expected)
     observed, metadata = {}, {}
-    storages = [value.untyped_storage().data_ptr() for value in inputs if value.numel()]
+    spans = [(str(value.device), value.data_ptr(),
+              value.data_ptr() + value.numel() * value.element_size())
+             for value in inputs if value.numel()]
     for (name, contract), value in zip(expected.items(), values, strict=True):
         if not isinstance(value, torch.Tensor):
             raise ValueError('Output must be an original ABI tensor: ' + name)
@@ -53,12 +55,15 @@ def native_outputs(workload, case_id, output, device='cuda:0', inputs=(), names=
                               contiguous=value.is_contiguous(), device=str(value.device))
         if metadata[name] != contract:
             raise ValueError('Tensor shape, dtype, layout or logical device differs: ' + name)
-        pointer = value.untyped_storage().data_ptr()
+        start = value.data_ptr()
+        end = start + value.numel() * value.element_size()
         if (workload.document.get('semantics', {}).get('output_storage', '').startswith('fresh')
-                and value.numel() and pointer in storages):
+                and value.numel() and any(
+                    device == str(value.device) and start < other_end and other_start < end
+                    for device, other_start, other_end in spans)):
             raise ValueError('Output storage overlaps an input or another output: ' + name)
         if value.numel():
-            storages.append(pointer)
+            spans.append((str(value.device), start, end))
         observed[name] = value.detach().reshape(-1).cpu().tolist()
     return observed, metadata
 

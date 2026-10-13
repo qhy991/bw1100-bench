@@ -141,7 +141,7 @@ GPU 模式仍需 DTK runtime、root/privileged 容器身份及 `/dev/kfd`、`/de
 
 [Compiler tools for hmz](docs/COMPILER-TOOLS.md) 说明新冻结 Run 如何从各自 Compiler
 自动获得变换清单、调用已有 Lab 解析器，并保留可回放的父候选、参数与生成结果。
-Bench 和 53 题开发共用这条作者接口，继续使用各自原有评测和终态。
+Bench 和注册任务开发共用这条作者接口，继续使用各自原有评测和终态。
 
 ## 软件验证
 

@@ -404,6 +404,43 @@ class DevelopmentTensorTests(unittest.TestCase):
             native_outputs(workload, 'primary', (shared, shared), 'cpu', (x,))
 
     @unittest.skipUnless(os.environ.get('BWBENCH_CAKE_SOURCE'), 'Set BWBENCH_CAKE_SOURCE for canonical Workload replay')
+    def test_original_multioutput_task_accepts_disjoint_spans_and_rejects_overlap(self):
+        source = os.environ['BWBENCH_CAKE_SOURCE']
+        script = '''
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(sys.argv[1]) / 'src'))
+import torch
+from open_cake_ir.tasks.workloads import create_task, WorkloadContract, materialize_evaluation_case
+from open_cake_ir.evaluation.core import compare_tile_outputs
+from development.development_device import input_tensor, input_snapshots, native_outputs
+doc, _ = create_task('per_channel_moments', backend='triton-dcu', rows=4, columns=4)
+w = WorkloadContract(doc)
+for case_id in w.case_ids:
+    before, expected = materialize_evaluation_case(w, case_id)
+    values = {arg.name: input_tensor(before[arg.name], arg)
+              for arg in w.tensor_abi(case_id) if arg.mode == 'input'}
+    storage = torch.empty(8)
+    outputs = (storage[:4], storage[4:])
+    for name, output in zip(('mean', 'mean_square'), outputs, strict=True):
+        output.copy_(torch.tensor(expected[name], dtype=torch.float32))
+    assert outputs[0].untyped_storage().data_ptr() == outputs[1].untyped_storage().data_ptr()
+    observed, metadata = native_outputs(w, case_id, outputs, 'cpu', values.values())
+    ok, metrics = compare_tile_outputs(w, before, expected, observed, input_snapshots(before, values))
+    assert ok, (case_id, metrics)
+    assert set(metadata) == {'mean', 'mean_square'}
+    for bad in ((storage[:4], storage[3:7]), (values['x'].reshape(-1)[1:5], storage[4:])):
+        try:
+            native_outputs(w, case_id, bad, 'cpu', values.values())
+        except ValueError as error:
+            assert 'overlaps' in str(error), error
+        else:
+            raise AssertionError('Overlapping output byte spans must fail')
+print('5 canonical multi-output cases accept disjoint shared storage and reject output/input overlaps')
+'''
+        subprocess.run([sys.executable, '-c', script, source], cwd=ROOT, check=True)
+
+    @unittest.skipUnless(os.environ.get('BWBENCH_CAKE_SOURCE'), 'Set BWBENCH_CAKE_SOURCE for canonical Workload replay')
     def test_affine_all_cases_preserve_inputs_under_canonical_comparator(self):
         source = os.environ['BWBENCH_CAKE_SOURCE']
         script = '''
