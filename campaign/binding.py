@@ -6,6 +6,17 @@ import subprocess
 
 GATEWAY_FILES = ("scripts/dtk.sh", "scripts/hcu_run.py", "scripts/hcu_device_identity.py",
                  "scripts/rocprof.sh", "scripts/verify_rocprof_csv.py")
+CONDITIONS_BY_KIND = {
+    'rolling_bench_fresh_search': ('control', 'successor'),
+    'rolling_bench_fresh_successor': ('successor',),
+}
+
+
+def plan_conditions(plan):
+    try:
+        return CONDITIONS_BY_KIND[plan['kind']]
+    except KeyError as error:
+        raise ValueError('Expected an evolve rolling Bench allocation') from error
 
 
 def read(path):
@@ -22,7 +33,8 @@ def clean(root, commit):
 
 
 def validate_plan(plan, suite):
-    if plan.get('kind') != 'rolling_bench_fresh_search' or plan.get('target') != 'gfx938':
+    conditions = plan_conditions(plan)
+    if plan.get('target') != 'gfx938':
         raise ValueError('Expected an evolve rolling gfx938 Bench allocation')
     available = {row['id'] for row in suite['tasks']}
     tasks = plan['task_ids']
@@ -31,6 +43,11 @@ def validate_plan(plan, suite):
         raise ValueError('Select a nonempty unique task subset from the pinned Bench suite')
     if type(plan['replicates']) is not int or plan['replicates'] < 1:
         raise ValueError('Frozen replicates must be a positive integer')
+    if conditions == ('successor',):
+        if plan['replicates'] != 1:
+            raise ValueError('A successor-only cohort has exactly one replicate')
+        if set(plan['bindings']) != {'bench', 'successor'}:
+            raise ValueError('A successor-only cohort binds only Bench and successor Compiler')
     author = plan['author']
     if (author['wall_time_seconds'], author['confirmation_seconds']) != (10800, 1800):
         raise ValueError('Existing assay supports exactly 3 hours including 30 minute confirmation')
@@ -41,7 +58,7 @@ def validate_plan(plan, suite):
     if plan['measurement_protocol'] != 'campaign/protocol.json':
         raise ValueError('Use the maintained complete-call campaign protocol')
     allocations = plan['allocations']
-    expected = {(task, condition, replicate) for task in tasks for condition in ('control', 'successor')
+    expected = {(task, condition, replicate) for task in tasks for condition in conditions
                 for replicate in range(1, plan['replicates'] + 1)}
     actual = [(row['task'], row['condition'], row['replicate']) for row in allocations]
     if len(actual) != len(expected) or set(actual) != expected:
@@ -52,10 +69,15 @@ def validate_plan(plan, suite):
         raise ValueError('Every original task needs its fixed community baseline')
     if plan['total_author_wall_seconds'] < len(allocations) * author['wall_time_seconds']:
         raise ValueError('Frozen author budget does not fund every allocation')
+    if conditions == ('successor',) and plan['total_author_wall_seconds'] != len(allocations) * author['wall_time_seconds']:
+        raise ValueError('A successor-only cohort funds exactly its assigned author time')
 
 
 def validate_routing(plan, routing):
     assignments, hosts = routing['assignments'], routing['hosts']
+    if plan_conditions(plan) == ('successor',):
+        if any(set(config['compiler_roots']) != {'successor'} for config in hosts.values()):
+            raise ValueError('Successor-only routing contains only the successor Compiler root')
     if (len(assignments) != len(plan['allocations']) or
         {row['workspace'] for row in assignments} != {row['workspace'] for row in plan['allocations']} or
         len({row['workspace'] for row in assignments}) != len(assignments) or

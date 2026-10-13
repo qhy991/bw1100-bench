@@ -2,11 +2,25 @@
 
 This successor maintains the existing external Ralph campaign and common assay. It
 prepares the frozen plan's explicit nonempty task subset of the twelve-task suite for
-both Compiler conditions. It does not launch GPU work during preparation, select a
+the declared Compiler conditions. It does not launch GPU work during preparation, select a
 winning version, or dispatch the next
 53 development tasks. The evolve owner reviews all Bench terminal records first.
 
-Freeze with Open-Cake `tools/evolve.py freeze-bench` using this clean Bench commit,
+For a single new Compiler cohort, use `kind: rolling_bench_fresh_successor` in a
+separately frozen plan. This kind accepts a nonempty task subset with exactly one
+successor allocation per task and `replicates: 1`. Its `bindings` contains exactly
+`bench` and `successor`. Each routing host's `compiler_roots` contains exactly
+`successor`. The total author budget equals the number of selected tasks times
+10800 seconds. Preparation does not need a control checkout.
+
+The existing `rolling_bench_fresh_search` kind keeps both conditions and its declared
+replicates. Open-Cake's `tools/evolve.py freeze-bench` generates that paired kind.
+The successor-only plan is a separately frozen input to `prepare_bench.py`.
+Keep any historical comparison ledger outside the plan and routing because those
+files are copied into each fresh author workspace. Historical results describe a
+previous cohort and do not form a contemporaneous paired Compiler comparison.
+
+Freeze a paired plan with Open-Cake `tools/evolve.py freeze-bench` using this clean Bench commit,
 `measurement_protocol: campaign/protocol.json`, the exact community baseline map,
 `knowledge: none`, `reference_access: known_kernel_reproduction`, and
 `scaffold: bw1100-bench@<this commit>:campaign/TASK.md`. The shared author budget is
@@ -30,7 +44,8 @@ Each host entry contains:
 - `home`: the existing account home used by hmz authentication and logs. It is not
   changed on disk and does not establish filesystem isolation.
 - `image`: qualified immutable image ID; `gateway`: clean source `root` and `commit`.
-- `compiler_roots`: clean `control` and `successor` source checkouts at the plan commits.
+- `compiler_roots`: clean source checkouts at the plan commits. Paired plans require
+  `control` and `successor`. Successor-only plans require only `successor`.
 - `data_root`: materialized suite `.data`, `sol_root`: pinned SOL-ExecBench source,
   `flag_gems_root`: the pinned FlagGems source used by the fixed baseline qualification.
 - `capacity_per_hcu`: explicit author concurrency from 1 to 3, and

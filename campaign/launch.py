@@ -9,7 +9,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from campaign.binding import reconcile
+from campaign.binding import read, reconcile
 from campaign.compiler_tools import catalog
 
 
@@ -60,6 +60,7 @@ def main():
     if sys.argv[1:] == ['--check']:
         print('Prepared binding matches the frozen allocation; author entry is available')
         return
+    experiment_kind = read(ROOT / 'campaign/frozen-plan.json')['kind']
     now = time.time()
     controls = binding['author']
     wall, reserve = controls['wall_time_seconds'], controls['confirmation_seconds']
@@ -70,7 +71,7 @@ def main():
     write_new(ROOT / 'campaign/deadline.json', deadline)
     intake = {**binding, 'plan': 'campaign/groups/c.json', 'protocol': 'campaign/protocol.json',
               'source_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
-              'experiment_kind': 'rolling_bench_fresh_search', 'arm': 'cake_ir',
+              'experiment_kind': experiment_kind, 'arm': 'cake_ir',
               'model': controls['model'], 'budget_hours': wall / 3600, 'author_executable': str(entry)}
     write_new(ROOT / 'campaign/intake.json', intake)
     model_code, error = None, None

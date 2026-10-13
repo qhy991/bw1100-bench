@@ -84,7 +84,7 @@ def prepare(plan_path, contracts_path, disposition_path, host, output):
         subprocess.run([sys.executable, str(run / 'campaign/compiler_tools.py'), 'freeze'], check=True)
         with (run / '.gitignore').open('a') as stream:
             for name in ('deadline.json', 'profile-intake.json', 'workload.json', 'development-inputs.pt',
-                         'starter-assessment.json', 'compiler-actions/', 'candidates/', 'evaluations/', 'logs/', 'JOURNAL/',
+                         'starter-assessment.json', 'compiler-actions/', 'candidates/', 'evaluations/', 'engineering/', 'logs/', 'JOURNAL/',
                          'JOURNAL.md', 'ENDPOINT.json', 'DONE.json', 'controller-status.json',
                          'SEARCH_CLOSE.json', 'search-close-owner.json', 'search-close-owner.json.tmp',
                          'search-close-owner.jsonl', 'author-round-terminal.json', 'author-round-terminal.json.tmp'):
@@ -94,7 +94,7 @@ def prepare(plan_path, contracts_path, disposition_path, host, output):
                         *GATEWAY_FILES, 'campaign'], check=True)
         subprocess.run(['git', '-C', str(run), 'commit', '-qm', 'Prepare immutable registered development Task'], check=True)
         records.append(dict(binding, prepared_commit=git(run, 'rev-parse', 'HEAD')))
-    new_json(output, dict(kind=KIND, host=host, capacity_per_hcu=1,
+    new_json(output, dict(kind=KIND, host=host, capacity_per_hcu=plan['controls']['capacity_per_hcu'],
         start_window_seconds=config['start_window_seconds'], runs=records))
     return records
 

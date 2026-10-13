@@ -21,7 +21,7 @@ and provenance are declared material, not a correctness or timing result under t
 Compiler. Requalify it on all five original cases inside this Run's budget. Keep it
 separate from candidates/starter.py. Then create structurally different Cake candidates.
 Keep authored candidates under campaign/candidates and generated tool stages at their
-original campaign/compiler-actions paths so emission retains their origin. Use only:
+original campaign/compiler-actions paths so emission retains their origin. For Cake evaluation use:
   python3 campaign/development_evaluate_owner.py --candidate RELATIVE_PATH --id UNIQUE_ID
 The adapter preserves your source, canonical assessment, unchanged emitted kernel,
 all original oracle checks, unprofiled callable samples and device release receipts.
@@ -43,13 +43,17 @@ installed analyzer and requested metrics; keep failed collections and specific s
 Do not infer bandwidth from reads alone, achieved occupancy from static allocation, or
 speed from instrumented duration. Inspect the actual generated source and ISA.
 
-When a concrete hypothesis cannot be expressed or lowered, retain the minimal legal/refused
-Schedule and diagnostic. Investigate the installed DTK/OCML/LLVM/gfx938 instruction path.
-A native engineering probe requires a separate campaign/engineering plan that names its
-hypothesis, exact target, inherited materials, original correctness contract and bounded
-admission before execution. It counts against this task's time, remains engineering-only,
-and must not replace or be reported as the Cake candidate. Propose Compiler changes for
-a reviewed successor after the Run. No Compiler defect or win is required; No promotion is valid.
+When a concrete hypothesis cannot be expressed or lowered, retain the minimal legal
+or refused Schedule, exact diagnostic and supported transforms considered. Investigate
+the installed DTK, OCML, LLVM and gfx938 instruction path. A HIP probe is required
+within this Run's remaining search budget. Use campaign/hip_probe.py and read
+docs/NATIVE-EXPLORATION.md for the owned source closure, prepare()/run() ABI and gap
+dossier. If the budget or infrastructure prevents execution, retain the specific
+reason and evidence with --skip-reason. Preserve all five original cases and the
+canonical Workload ABI. Native observations stay in campaign/engineering, outside
+Cake evaluation, nomination and confirmation. Record the mechanism, counterexamples,
+missing Cake commitment and proposed next owner for a reviewed successor. Candidate
+misuse and resource waits do not establish a Compiler defect. No promotion is valid.
 
 Each task has 3h from CPU preparation: search 150min, owner confirmation 30min. Compilation,
 model calls, queue waits, correctness, timing and profiling all count. Tokens are accounting
@@ -58,7 +62,7 @@ may exceed the search cutoff. Do not invoke owner confirmation or alter ENDPOINT
 
 The host coordinator owns the static author slots in the frozen allocation in
 campaign/development-plan.json:
-one author per assigned HCU. CPU/model work on disjoint assigned HCUs can overlap.
+use its declared author capacity per HCU. CPU/model work can overlap within that allocation.
 The HCU stop-file path in development-binding.json stops new admissions on that HCU.
 On an infrastructure or release
 observer failure, retain the failure and return; do not repeat recovery probes or repair

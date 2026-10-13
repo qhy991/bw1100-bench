@@ -19,11 +19,22 @@ results or external kernel collections. Knowledge is the frozen plan's selection
 The host filesystem is not an isolation boundary. Read campaign/management/StateCard.json
 before each proposal and after context compaction.
 
-All custom GPU computation must be unchanged Cake emission with declared emission receipts.
+All counted Cake GPU computation must be unchanged Cake emission with declared emission receipts.
 Author a Schedule or use public Compiler transforms, emit with campaign/cake_bridge.py,
 and retain every declared receipt. Wrappers preserve the public ABI and may use the
 source-bound community calls. Native Torch/Triton/HIP math or torch.compile is not a
 counted Cake solution. Never edit Compiler, evaluator, protocol or final confirmation.
+
+When a concrete optimization mechanism cannot be expressed or lowered, retain the
+smallest Cake attempt, exact diagnostic and supported transforms considered. Then
+perform a HIP probe through campaign/hip_probe.py within this Run's search budget.
+Read docs/NATIVE-EXPLORATION.md for the required source closure, prepare()/run() ABI,
+gap dossier and command. If budget or infrastructure prevents execution, retain its
+specific evidence with --skip-reason. This exploration is required for demonstrated
+IR or lowering limitations; malformed candidates and resource waits are not IR gaps.
+Native records stay in campaign/engineering and never become Cake nominees or scores.
+Use the observations and counterexamples to propose a concrete Compiler improvement
+for independent review after this Run. Do not edit the pinned Compiler.
 
 Use campaign/evaluate.py --candidate PATH --id UNIQUE --cake-artifact RECEIPT
 with diagnostic evidence or a specific task-related profiling skip reason. It runs
@@ -38,7 +49,8 @@ retain the receipt and state the missing evidence. Do not infer a Compiler defec
 from a malformed Schedule or a generic tool error. Record reusable leads with their
 original source, diagnosis, counterexamples and disposition in campaign/EVOLUTION.md.
 
-Use only campaign/admit.sh for bounded device work on the assigned HCU. The existing
+Use campaign/admit.sh for Cake device work and campaign/hip_probe.py for native probes.
+Both use the same qualified gateway and assigned HCU. The existing
 scripts/hcu_run.py owns admission and release; the queue schedules authors only.
 Never use HCU0, raw GPU Docker or another allocator. Other users' activity is not
 excluded. Do not reserve a GPU during authoring or CPU preparation. Keep

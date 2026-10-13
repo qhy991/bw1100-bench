@@ -32,10 +32,22 @@ def write_bytes_new(path, value):
         stream.write(value)
 
 
+def compare_cases(workload, prepared, observed):
+    assert [x['case_id'] for x in prepared] == list(workload.case_ids)
+    assert [x['case_id'] for x in observed] == list(workload.case_ids)
+    checks = []
+    for case, seen in zip(prepared, observed, strict=True):
+        ok, metrics = compare_tile_outputs(workload, case['flat_inputs'], case['expected'],
+                                          seen['outputs'], seen['after_inputs'])
+        checks.append(dict(case_id=case['case_id'], passed=ok, metrics=metrics))
+    return checks
+
+
 p = argparse.ArgumentParser()
-p.add_argument('--candidate', required=True)
+p.add_argument('--candidate')
+p.add_argument('--native-manifest')
 p.add_argument('--id', required=True)
-p.add_argument('--phase', choices=['emit', 'compare', 'validate'], required=True)
+p.add_argument('--phase', choices=['emit', 'compare', 'validate', 'compare-native'], required=True)
 p.add_argument('--result-phase', choices=['search', 'confirmation'], default='search')
 a = p.parse_args()
 assert re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,63}', a.id)
@@ -45,6 +57,37 @@ w = load_workload(R / 'campaign/workload.json')
 c = Compiler.load(C, C / 'compiler/revision.json')
 assert c.commit == b['compiler']
 assert list(w.case_ids) == b['case_ids'] and len(w.case_ids) == 5
+if a.phase == 'compare-native':
+    if a.candidate or not a.native_manifest or a.result_phase != 'search':
+        raise ValueError('Native comparison needs its manifest and stays in search engineering evidence')
+    import torch
+    from campaign.hip_probe import own_path, verify_files
+    from development_device import native_output_contract
+    folder = own_path(R, 'campaign/engineering/' + a.id)
+    manifest_path = own_path(R, a.native_manifest)
+    if manifest_path != folder / 'manifest.json':
+        raise ValueError('Native manifest must belong to this engineering probe ID')
+    manifest = json.loads(manifest_path.read_text())
+    if (manifest.get('implementation_kind') != 'native_hip' or manifest.get('id') != a.id
+            or manifest.get('compiler') != c.commit or manifest.get('task') != b['task']):
+        raise ValueError('Native manifest differs from the original Task or Compiler')
+    verify_files(R, manifest, json.loads((folder / 'build.json').read_text()))
+    prepared = torch.load(R / 'campaign/development-inputs.pt', weights_only=False)
+    observed = torch.load(folder / 'observed.pt', weights_only=False)
+    for seen in observed:
+        if (seen.get('implementation_kind') != 'native_hip'
+                or seen.get('output_metadata') != native_output_contract(w, seen['case_id'])):
+            raise ValueError('Native output metadata differs from the original Workload ABI')
+    checks = compare_cases(w, prepared, observed)
+    result = dict(id=a.id, implementation_kind='native_hip', compiler=c.commit,
+                  numerically_passed=all(row['passed'] for row in checks), checks=checks,
+                  primary_us=next(row['samples_us'] for row in observed if row['case_id'] == 'primary'),
+                  scope='engineering numeric observations; precision and execution-source review pending')
+    write_new(folder / 'comparison.json', result)
+    print(json.dumps(result))
+    raise SystemExit(0 if result['numerically_passed'] else 1)
+if not a.candidate or a.native_manifest:
+    raise ValueError('Cake evaluation needs its candidate and no native manifest')
 folder = R / 'campaign/evaluations' / a.id
 if Path(a.candidate).suffix not in ('.py', '.json'):
     raise ValueError('Candidate must be Cake Python or a complete Schedule JSON')
@@ -157,12 +200,7 @@ else:
     import torch
     prepared = torch.load(R / 'campaign/development-inputs.pt', weights_only=False)
     observed = torch.load(folder / 'observed.pt', weights_only=False)
-    assert [x['case_id'] for x in prepared] == list(w.case_ids)
-    assert [x['case_id'] for x in observed] == list(w.case_ids)
-    checks = []
-    for case, seen in zip(prepared, observed, strict=True):
-        ok, metrics = compare_tile_outputs(w, case['flat_inputs'], case['expected'], seen['outputs'], seen['after_inputs'])
-        checks.append(dict(case_id=case['case_id'], passed=ok, metrics=metrics))
+    checks = compare_cases(w, prepared, observed)
     result = dict(id=a.id, phase=a.result_phase,
                   status='accepted' if all(x['passed'] for x in checks) else 'numerically_failed',
                   compiler=c.commit, scope='registered Task development; diagnostic callable samples, no performance win',

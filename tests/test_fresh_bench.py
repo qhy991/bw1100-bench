@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT))
 from campaign.binding import reconcile, validate_plan, validate_routing
 from campaign.completion import confirmed_row
 from campaign.precision_guard import validate as precision
-from campaign import evaluate
+from campaign import evaluate, launch
 
 
 def module(name):
@@ -36,24 +36,28 @@ def write(path, value):
     path.write_text(json.dumps(value))
 
 
-def plan(suite, bench='b' * 40):
+def plan(suite, bench='b' * 40, kind='rolling_bench_fresh_search'):
     tasks = [row['id'] for row in suite['tasks']]
-    return {'kind': 'rolling_bench_fresh_search', 'target': 'gfx938', 'task_ids': tasks,
+    conditions = ('successor',) if kind == 'rolling_bench_fresh_successor' else ('control', 'successor')
+    return {'kind': kind, 'target': 'gfx938', 'task_ids': tasks,
             'replicates': 1, 'bindings': {'bench': {'commit': bench},
-                'control': {'commit': 'c' * 40}, 'successor': {'commit': 'd' * 40}},
+                **{condition: {'commit': ('c' if condition == 'control' else 'd') * 40}
+                   for condition in conditions}},
             'author': {'model': 'claude/glm-5.3:high', 'scaffold': 'bw1100-bench@' + bench + ':campaign/TASK.md',
                        'knowledge': 'none', 'reference_access': 'known_kernel_reproduction',
                        'wall_time_seconds': 10800, 'confirmation_seconds': 1800},
             'measurement_protocol': 'campaign/protocol.json',
-            'total_author_wall_seconds': 24 * 10800,
+            'total_author_wall_seconds': len(tasks) * len(conditions) * 10800,
             'baseline_files': {task: 'baselines/' + str(i) + '.py' for i, task in enumerate(tasks)},
             'allocations': [{'task': task, 'condition': condition, 'replicate': 1,
                              'workspace': '/intent/runs/t%03d-r1-%s' % (i + 1, condition)}
-                            for i, task in enumerate(tasks) for condition in ('control', 'successor')]}
+                            for i, task in enumerate(tasks) for condition in conditions]}
 
 
 def routing(frozen, parent):
-    return {'hosts': {'local': {}, 'other': {}}, 'assignments': [
+    return {'hosts': {host: {'compiler_roots': {row['condition']: '/fixture/' + row['condition']
+                                             for row in frozen['allocations']}}
+                      for host in ('local', 'other')}, 'assignments': [
         {'workspace': row['workspace'], 'host': 'local' if index < 2 else 'other',
          'root': str(parent / Path(row['workspace']).name), 'hcu': 1 if index < 2 else 2}
         for index, row in enumerate(frozen['allocations'])]}
@@ -71,6 +75,7 @@ class FreshBenchTests(unittest.TestCase):
 
     def test_all_24_assignments_and_route_pairing(self):
         validate_plan(self.plan, self.suite)
+        self.assertEqual(len(self.plan['allocations']), 24)
         routes = routing(self.plan, self.root)
         validate_routing(self.plan, routes)
         for mutation in ('missing', 'duplicate', 'foreign', 'cross_host', 'cross_hcu', 'same_root'):
@@ -89,6 +94,45 @@ class FreshBenchTests(unittest.TestCase):
         bad = copy.deepcopy(self.plan)
         bad['task_ids'].pop()
         with self.assertRaises(ValueError): validate_plan(bad, self.suite)
+
+    def test_successor_only_has_one_run_per_task_and_rejects_extra_work_before_writes(self):
+        frozen = plan(self.suite, kind='rolling_bench_fresh_successor')
+        validate_plan(frozen, self.suite)
+        self.assertEqual(len(frozen['allocations']), 12)
+        self.assertEqual({row['condition'] for row in frozen['allocations']}, {'successor'})
+        self.assertEqual({row['task'] for row in frozen['allocations']}, set(frozen['task_ids']))
+        routes = routing(frozen, self.root / 'physical-runs')
+        validate_routing(frozen, routes)
+        write(self.root / 'routing.json', routes)
+        for mutation in ('missing', 'duplicate', 'control', 'replicates', 'under_budget',
+                         'over_budget', 'control_binding', 'missing_binding', 'unknown_kind'):
+            bad = copy.deepcopy(frozen)
+            if mutation == 'missing': bad['allocations'].pop()
+            if mutation == 'duplicate': bad['allocations'][-1] = bad['allocations'][0]
+            if mutation == 'control': bad['allocations'][0]['condition'] = 'control'
+            if mutation == 'replicates': bad['replicates'] = 2
+            if mutation == 'under_budget': bad['total_author_wall_seconds'] -= 1
+            if mutation == 'over_budget': bad['total_author_wall_seconds'] += 1
+            if mutation == 'control_binding': bad['bindings']['control'] = {'commit': 'c' * 40}
+            if mutation == 'missing_binding': del bad['bindings']['successor']
+            if mutation == 'unknown_kind': bad['kind'] = 'unrecognized'
+            write(self.root / 'bad-plan.json', bad)
+            with self.subTest(mutation=mutation), patch.object(prepare, 'clone') as clone, \
+                 patch.object(prepare, 'clean', side_effect=AssertionError('Invalid plan reached source preparation')):
+                with self.assertRaises(ValueError):
+                    prepare.prepare(self.root / 'bad-plan.json', self.root / 'routing.json',
+                                    'local', self.root / 'allocation.json')
+                clone.assert_not_called()
+                self.assertFalse((self.root / 'physical-runs').exists())
+                self.assertFalse((self.root / 'allocation.json').exists())
+
+    def test_successor_only_accepts_a_smaller_explicit_suite_subset(self):
+        subset = copy.deepcopy(self.suite)
+        subset['tasks'] = subset['tasks'][:2]
+        frozen = plan(subset, kind='rolling_bench_fresh_successor')
+        validate_plan(frozen, self.suite)
+        self.assertEqual(len(frozen['allocations']), 2)
+        self.assertEqual(frozen['total_author_wall_seconds'], 21600)
 
     def test_existing_queue_reservation_never_restarts(self):
         state = self.root / 'owner'
@@ -256,6 +300,12 @@ class FreshBenchTests(unittest.TestCase):
             confirmed_row(self.root, confirmation, candidates, {})
 
     def test_prepare_real_git_pair_is_fresh_and_reconciles(self):
+        self.prepare_real_git('rolling_bench_fresh_search')
+
+    def test_prepare_real_git_successor_only_needs_no_control_checkout(self):
+        self.prepare_real_git('rolling_bench_fresh_successor')
+
+    def prepare_real_git(self, kind):
         def git(repo, *args):
             return subprocess.check_output(['git', '-C', str(repo), *args], text=True, stderr=subprocess.DEVNULL).strip()
         def repo(name):
@@ -272,8 +322,9 @@ class FreshBenchTests(unittest.TestCase):
         sol = repo('sol')
         (sol / 'source').write_text('pinned fixture')
         sol_pin = commit(sol)
+        frozen = plan(self.suite, kind=kind)
         compilers = {}
-        for condition in ('control', 'successor'):
+        for condition in {row['condition'] for row in frozen['allocations']}:
             source = repo(condition)
             write(source / 'compiler/revision.json', {'fixture': condition})
             add_catalog(source, condition)
@@ -290,7 +341,6 @@ class FreshBenchTests(unittest.TestCase):
             target = bench / name
             target.parent.mkdir(exist_ok=True)
             target.write_text('qualified fixture route\n')
-        frozen = plan(self.suite)
         data = self.root / 'data'
         for task, name in frozen['baseline_files'].items():
             target = bench / name
@@ -324,6 +374,18 @@ class FreshBenchTests(unittest.TestCase):
                 prepare.prepare(self.root / 'plan.json', self.root / 'routing.json', 'local', self.root / 'allocation.json')
             self.assertFalse((self.root / 'physical-runs').exists())
             git(bench, 'config', '--local', 'user.email', 'bench-test@example.invalid')
+            if kind == 'rolling_bench_fresh_successor':
+                self.assertFalse((self.root / 'control').exists())
+                for host in routes['hosts']:
+                    bad = copy.deepcopy(routes)
+                    bad['hosts'][host]['compiler_roots']['control'] = '/never-clone-control'
+                    write(self.root / 'routing.json', bad)
+                    with self.subTest(control_root_host=host), self.assertRaisesRegex(ValueError, 'successor Compiler root'):
+                        prepare.prepare(self.root / 'plan.json', self.root / 'routing.json',
+                                        'local', self.root / 'allocation.json')
+                    self.assertFalse((self.root / 'physical-runs').exists())
+                    self.assertFalse((self.root / 'allocation.json').exists())
+                write(self.root / 'routing.json', routes)
             rows = prepare.prepare(self.root / 'plan.json', self.root / 'routing.json', 'local', self.root / 'allocation.json')
             self.assertEqual(len(rows), 2)
             for row in rows:
@@ -333,6 +395,7 @@ class FreshBenchTests(unittest.TestCase):
                 self.assertNotEqual(binding['frozen_workspace'], row['root'])
                 self.assertEqual(list((run / 'campaign/candidates').iterdir()), [])
                 self.assertFalse((run / 'campaign/intake.json').exists())
+                self.assertFalse((run / 'campaign/deadline.json').exists())
                 api = json.loads((run / 'campaign/compiler-api.json').read_text())
                 self.assertEqual(api['compiler_commit'], row['compiler_commit'])
                 self.assertEqual(api['transformations'][0]['description'], row['condition'])
@@ -345,6 +408,10 @@ class FreshBenchTests(unittest.TestCase):
                 self.assertEqual(git(run, 'config', '--local', 'user.email'), 'bench-test@example.invalid')
             with self.assertRaises(FileExistsError):
                 prepare.prepare(self.root / 'plan.json', self.root / 'routing.json', 'local', self.root / 'allocation.json')
+            with self.assertRaisesRegex(ValueError, 'no replacement or reset'):
+                prepare.prepare(self.root / 'plan.json', self.root / 'routing.json', 'local', self.root / 'another-allocation.json')
+            self.assertFalse((self.root / 'another-allocation.json').exists())
+            self.check_launch_kind(Path(rows[0]['root']), kind)
             git(bench, 'rm', 'scripts/hcu_device_identity.py')
             git(bench, 'commit', '-qm', 'Missing helper negative fixture')
             with self.assertRaisesRegex(ValueError, 'hcu_device_identity.py'):
@@ -354,6 +421,41 @@ class FreshBenchTests(unittest.TestCase):
             modified['hcu'] = 2
             write(run / 'campaign/groups/c.json', modified)
             with self.assertRaises(ValueError): reconcile(run)
+
+    def check_launch_kind(self, run, kind):
+        check_output = subprocess.check_output
+        subprocess_run = subprocess.run
+        def git_only(command, **kwargs):
+            self.assertEqual(command[0], 'git', 'Device or model execution is forbidden in this CPU fixture')
+            return subprocess_run(command, **kwargs)
+        def stop_before_device_or_model(command, **kwargs):
+            if command[0] == 'git':
+                return check_output(command, **kwargs)
+            self.assertIn('scripts/ralph_profile_intake.py', command)
+            raise ValueError('CPU fixture stops before device or model')
+        old_cwd = Path.cwd()
+        try:
+            with patch.object(launch, 'ROOT', run), patch.object(sys, 'argv', ['launch']), \
+                 patch.object(launch, 'author_entry', return_value=(self.root / 'fixture-hmz', {})), \
+                 patch.object(launch.subprocess, 'check_output', side_effect=stop_before_device_or_model), \
+                 patch.object(launch.subprocess, 'run', side_effect=git_only), patch.object(launch, 'author') as author:
+                with self.assertRaisesRegex(ValueError, 'CPU fixture stops'):
+                    launch.main()
+                author.assert_not_called()
+            intake = json.loads((run / 'campaign/intake.json').read_text())
+            self.assertEqual(intake['experiment_kind'], kind)
+            self.assertEqual(intake['condition'], 'successor' if kind == 'rolling_bench_fresh_successor' else 'control')
+            deadline = (run / 'campaign/deadline.json').read_bytes()
+            with patch.object(launch, 'ROOT', run), patch.object(sys, 'argv', ['launch']), \
+                 patch.object(launch, 'author_entry', return_value=(self.root / 'fixture-hmz', {})), \
+                 patch.object(launch, 'author') as author:
+                with self.assertRaises(FileExistsError):
+                    launch.main()
+                author.assert_not_called()
+            self.assertEqual((run / 'campaign/deadline.json').read_bytes(), deadline)
+            self.assertEqual(json.loads((run / 'campaign/intake.json').read_text()), intake)
+        finally:
+            os.chdir(old_cwd)
 
 
 if __name__ == '__main__':
