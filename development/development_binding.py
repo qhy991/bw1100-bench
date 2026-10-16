@@ -28,6 +28,11 @@ def render_task(template, binding):
     warning = ('The canonical gemm_bias starter has a retained mixed_magnitude failure; '
                'preserve the five-case contract and report the result.' if binding['task'] == 'gemm_bias' else '')
     rendered = template.replace('{starter_warning}', warning)
+    if binding.get('hypothesis'):
+        rendered += ('\n## Selected search question\n\n' + binding['hypothesis']
+                     + '\nKeep this search within that question and the original Task contract. '
+                       'Retain the incumbent or record No promotion when no lawful improvement '
+                       'is supported; do not replace it with an unrelated repeated search.\n')
     if binding['task'] in ('aka_nearest_scatter', 'aka_maxpool3d_backward',
                            'aka_hard_sigmoid_gradient', 'aka_select_gradient',
                            'aka_segment_tile_repeat', 'aka_affine_nhwc'):
@@ -93,6 +98,11 @@ def validate_plan(plan, contracts):
         raise ValueError('Select a nonempty unique subset of the frozen task catalog')
     if len(rows) != len(selected) or {row['task'] for row in rows} != set(selected):
         raise ValueError('Assign every selected development task exactly once')
+    if 'hypotheses' in plan and (
+            not isinstance(plan['hypotheses'], dict) or set(plan['hypotheses']) != set(selected)
+            or any(not isinstance(value, str) or not value.strip()
+                   for value in plan['hypotheses'].values())):
+        raise ValueError('Declare one nonempty search hypothesis per selected Task')
     if len({row['root'] for row in rows}) != len(rows):
         raise ValueError('Every development Run needs a unique fresh root')
     for host, config in plan['hosts'].items():
@@ -160,6 +170,8 @@ def reconcile(root, mounted=False):
     if binding['batch_stop_file'] != str(Path(config['owner_root']) / ('STOP-hcu' + str(row['hcu']) + '.json')):
         raise ValueError('Stop file must belong to this HCU under its host owner')
     contract = original['tasks'][binding['task']]
+    if binding.get('hypothesis') != plan.get('hypotheses', {}).get(binding['task']):
+        raise ValueError('Prepared search hypothesis differs from the frozen plan')
     if any(binding[key] != contract[key] for key in ('rows', 'columns', 'depth', 'case_ids', 'abi')):
         raise ValueError('Prepared task differs from its original shape, cases or ABI')
     if read(root / 'campaign/original-workload.json') != contract['workload']:
