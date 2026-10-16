@@ -72,6 +72,8 @@ def prepare(plan_path, contracts_path, disposition_path, host, output):
             gateway_files=list(GATEWAY_FILES), **plan['controls'],
             **{key: contract[key] for key in ('rows', 'columns', 'depth', 'case_ids', 'abi')},
             batch_stop_file=str(Path(config['owner_root']) / ('STOP-hcu' + str(row['hcu']) + '.json')))
+        if 'hypotheses' in plan:
+            binding['hypothesis'] = plan['hypotheses'][task]
         new_json(run / 'campaign/development-binding.json', binding)
         new_json(run / 'campaign/development-plan.json', plan)
         new_json(run / 'campaign/original-contracts.json', contracts)
