@@ -14,6 +14,7 @@ if SOURCE:
     sys.path.insert(0, str(Path(SOURCE) / 'src'))
 
 from development.development_task_source import task_source
+from development.development_binding import render_task
 
 try:
     import torch
@@ -25,6 +26,16 @@ if torch is not None:
 
 @unittest.skipUnless(SOURCE, 'needs the pinned task source')
 class NamedGeometryTests(unittest.TestCase):
+    def test_author_material_names_the_exact_pinned_owner_and_functions(self):
+        for task in ('aka_nearest_scatter', 'aka_maxpool3d_backward',
+                     'aka_select_gradient', 'aka_hard_sigmoid_gradient',
+                     'aka_segment_tile_repeat', 'aka_affine_nhwc'):
+            binding = dict(task=task, rows=None, columns=None, depth=None, compiler='a' * 40)
+            text = render_task('Task {task} at {compiler}', binding)
+            self.assertIn('.deps/cake-ir/src/open_cake_ir/tasks/' + task + '.py', text)
+            self.assertIn('agent_instructions()', text)
+            self.assertIn('reference_source()', text)
+
     def test_named_workloads_preserve_the_complete_original_documents(self):
         from open_cake_ir.tasks.workloads import WorkloadContract
 

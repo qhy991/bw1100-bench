@@ -27,7 +27,19 @@ def render_task(template, binding):
         template = template.replace('{' + key + '}', str(binding[key]))
     warning = ('The canonical gemm_bias starter has a retained mixed_magnitude failure; '
                'preserve the five-case contract and report the result.' if binding['task'] == 'gemm_bias' else '')
-    return template.replace('{starter_warning}', warning)
+    rendered = template.replace('{starter_warning}', warning)
+    if binding['task'] in ('aka_nearest_scatter', 'aka_maxpool3d_backward',
+                           'aka_hard_sigmoid_gradient', 'aka_select_gradient',
+                           'aka_segment_tile_repeat', 'aka_affine_nhwc'):
+        rendered += ('\n## Original Task instructions and reference\n\n'
+                     'After the mandatory profiling-skill intake and before authoring, read '
+                     'agent_instructions() and reference_source() in the exact pinned owner:\n'
+                     '.deps/cake-ir/src/open_cake_ir/tasks/' + binding['task'] + '.py\n'
+                     'Print both functions with the pinned Compiler package on PYTHONPATH '
+                     'if their returned text is constructed. This is CPU-only original Task '
+                     'material, not another Run or Bench answer. Preserve its complete '
+                     'semantics and all original cases.\n')
+    return rendered
 
 
 def render_agents():
