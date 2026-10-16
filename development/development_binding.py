@@ -7,7 +7,7 @@ import subprocess
 KIND = 'registered_task_development'
 ADAPTER_SCRIPTS = ('development_binding.py', 'development_control.py', 'development_device.py',
                    'development_evaluate.py', 'development_evaluate_owner.py', 'development_launch.py',
-                   'development_prepare.py', 'development_stop.py', 'ralph_flow.py')
+                   'development_prepare.py', 'development_task_source.py', 'development_stop.py', 'ralph_flow.py')
 SHARED_SCRIPTS = ('campaign/compiler_tools.py', 'campaign/_compiler_tools.py',
                   'campaign/compiler-tools-source.json', 'campaign/launch.py', 'campaign/binding.py', 'scripts/bench_queue.py',
                   'scripts/ralph_profile_intake.py', 'scripts/json_stream.py', 'scripts/queue_handoff.py',

@@ -16,6 +16,9 @@ DTYPES = {'fp32': torch.float32, 'bf16': torch.bfloat16,
 
 
 def input_tensor(value, arg):
+    if isinstance(value, torch.Tensor) and (
+            tuple(value.shape) != tuple(arg.shape) or not value.is_contiguous()):
+        raise ValueError('Materialized tensor shape or layout differs from its Workload ABI: ' + arg.name)
     tensor = (value.detach().cpu().clone() if isinstance(value, torch.Tensor)
               else torch.tensor(value, dtype=DTYPES[arg.dtype]))
     if tensor.dtype != DTYPES[arg.dtype]:
@@ -34,7 +37,8 @@ def native_output_contract(workload, case_id, device='cuda:0'):
             for arg in workload.tensor_abi(case_id) if arg.mode == 'output'}
 
 
-def native_outputs(workload, case_id, output, device='cuda:0', inputs=(), names=None):
+def native_outputs(workload, case_id, output, device='cuda:0', inputs=(), names=None,
+                   expected_outputs=None):
     expected = native_output_contract(workload, case_id, device)
     values = (output,) if isinstance(output, torch.Tensor) else output
     if not isinstance(values, (list, tuple)) or len(values) != len(expected):
@@ -64,7 +68,10 @@ def native_outputs(workload, case_id, output, device='cuda:0', inputs=(), names=
             raise ValueError('Output storage overlaps an input or another output: ' + name)
         if value.numel():
             spans.append((str(value.device), start, end))
-        observed[name] = value.detach().reshape(-1).cpu().tolist()
+        host = value.detach().cpu().clone()
+        observed[name] = (host if expected_outputs is not None
+                          and isinstance(expected_outputs[name], torch.Tensor)
+                          else host.reshape(-1).tolist())
     return observed, metadata
 
 
@@ -103,7 +110,8 @@ def main():
         out = fn(**values)
         torch.cuda.synchronize()
         observed, metadata = native_outputs(workload, case['case_id'], out, inputs=values.values(),
-                                            names=None if args.native_manifest else record['outputs'])
+                                            names=None if args.native_manifest else record['outputs'],
+                                            expected_outputs=case['expected'])
         samples = []
         if case['case_id'] == 'primary':
             for _ in range(10):
