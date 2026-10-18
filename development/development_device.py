@@ -12,7 +12,7 @@ R = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(R))
 sys.path.insert(0, str(R / '.deps/cake-ir/src'))
 DTYPES = {'fp32': torch.float32, 'bf16': torch.bfloat16,
-          'fp16': torch.float16, 'int32': torch.int32}
+          'fp16': torch.float16, 'int32': torch.int32, 'int64': torch.int64}
 
 
 def input_tensor(value, arg):
