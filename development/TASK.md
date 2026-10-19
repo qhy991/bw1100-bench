@@ -8,8 +8,9 @@ known-kernel reproduction of your canonical starter and any explicitly declared 
 candidate in campaign/inherited. Filesystem isolation is not established.
 
 Read campaign/development-binding.json, workload.json, deadline.json and candidates/starter.py.
-Keep the catalog's declared rows={rows}, columns={columns}, depth={depth}, every original
-case, dtype, ABI, oracle and tolerance. Read .deps/cake-ir/AGENTS.md and docs/BENCHMARK_PROTOCOL.md,
+Keep the complete named geometry in campaign/original-workload.json, every original
+case, dtype, ABI, oracle and tolerance. The catalog's legacy rows/columns/depth aliases
+do not replace a named-geometry Task. Read .deps/cake-ir/AGENTS.md and docs/BENCHMARK_PROTOCOL.md,
 docs/IR_GUIDE.md, docs/AUTHORING_CONTRACT.md, docs/REGISTER_TRANSPOSE.md,
 docs/DCU_STORE_LOOP_STAGES.md, docs/PROGRAM_MAP_FRONTEND.md,
 docs/MULTI_REGION_MMA.md and docs/wiki/primitives.md. Read the exact profiling skill

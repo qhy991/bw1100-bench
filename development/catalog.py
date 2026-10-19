@@ -3,18 +3,19 @@ from pathlib import Path
 import argparse
 import json
 import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from development.development_task_source import task_source
 
 
 def catalog(compiler_source, commit, contracts, inherited=()):
     sys.path.insert(0, str(compiler_source / 'src'))
     from open_cake_ir.compiler import Compiler, frontend
-    from open_cake_ir.tasks.workloads import create_task, WorkloadContract
+    from open_cake_ir.tasks.workloads import WorkloadContract
     compiler = Compiler.load(compiler_source, compiler_source / 'compiler/revision.json')
     if compiler.commit != commit:
         raise ValueError('CPU catalog Compiler differs from the selected commit')
     for task, expected in contracts['tasks'].items():
-        document, starter = create_task(task, backend='triton-dcu', **{
-            key: expected[key] for key in ('rows', 'columns', 'depth')})
+        document, starter = task_source(task, expected)
         if document != expected['workload']:
             raise ValueError(task + ': original whole Workload changed')
         workload = WorkloadContract(document)

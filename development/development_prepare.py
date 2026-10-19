@@ -9,16 +9,17 @@ C = R / '.deps/cake-ir'
 sys.path.insert(0, str(C / 'src'))
 sys.path.insert(0, str(R))
 from open_cake_ir.compiler import Compiler, frontend
-from open_cake_ir.tasks.workloads import create_task, load_workload, materialize_evaluation_case
+from open_cake_ir.tasks.workloads import load_workload, materialize_evaluation_case
 from development_binding import reconcile
 from development_device import input_tensor
+from development_task_source import task_source
 
 b = reconcile(R, mounted=True)
 c = Compiler.load(C, C / 'compiler/revision.json')
 assert c.commit == b['compiler']
-doc, source = create_task(b['task'], backend='triton-dcu', rows=b['rows'],
-                          columns=b['columns'], depth=b['depth'])
-assert doc == json.loads((R / 'campaign/original-workload.json').read_text()), 'original Workload changed'
+contract = dict(rows=b['rows'], columns=b['columns'], depth=b['depth'],
+                workload=json.loads((R / 'campaign/original-workload.json').read_text()))
+doc, source = task_source(b['task'], contract)
 with (R / 'campaign/workload.json').open('x') as stream:
     json.dump(doc, stream, indent=2)
 with (R / 'campaign/candidates/starter.py').open('x') as stream:

@@ -108,6 +108,39 @@ class DevelopmentTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_plan(plan, bad_contracts)
 
+    def test_selected_hypotheses_are_complete_and_nonempty(self):
+        plan, contracts = allocation(self.root)
+        plan['hypotheses'] = {task: 'Test one bounded mapping hypothesis.' for task in contracts['tasks']}
+        validate_plan(plan, contracts)
+        for change in ('missing', 'extra', 'empty', 'not_text'):
+            bad = copy.deepcopy(plan)
+            first = next(iter(contracts['tasks']))
+            if change == 'missing': bad['hypotheses'].pop(first)
+            if change == 'extra': bad['hypotheses']['unselected'] = 'Other question'
+            if change == 'empty': bad['hypotheses'][first] = ' '
+            if change == 'not_text': bad['hypotheses'][first] = 3
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                validate_plan(bad, contracts)
+
+    def test_prepare_delivers_and_reconciles_the_selected_question(self):
+        adapter, plan, contracts = self.sources()
+        plan['hypotheses'] = {task: 'Only test row-statistic broadcast regrouping.'
+                              for task in contracts['tasks']}
+        write(self.root / 'plan.json', plan)
+        with patch.object(prepare, 'ROOT', adapter):
+            prepare.prepare(self.root / 'plan.json', self.root / 'contracts.json',
+                            self.root / 'disposition.json', 'first', self.root / 'allocation.json')
+        run = Path(plan['assignments'][0]['root'])
+        self.assertIn(plan['hypotheses']['task_0'], (run / 'campaign/TASK.md').read_text())
+        self.assertEqual(reconcile(run)['hypothesis'], plan['hypotheses']['task_0'])
+        binding = json.loads((run / 'campaign/development-binding.json').read_text())
+        binding['hypothesis'] = 'Unrelated search'
+        write(run / 'campaign/development-binding.json', binding)
+        git(run, 'add', '.')
+        git(run, 'commit', '-qm', 'Fixture changed hypothesis')
+        with self.assertRaisesRegex(ValueError, 'hypothesis'):
+            reconcile(run)
+
     def test_starter_only_prepare_has_no_inherited_provenance(self):
         adapter, plan, contracts = self.sources()
         row = plan['assignments'][0]
