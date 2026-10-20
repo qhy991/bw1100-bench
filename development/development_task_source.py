@@ -1,12 +1,21 @@
 """Resolve the starter without replacing the frozen Task-owned Workload."""
 from importlib import import_module
 
+# Tasks whose Workload comes from their own geometry factory instead of from
+# create_task(task, rows=..., columns=..., depth=...). create_task refuses all three by
+# design -- each requires launch_task.py --workload because its geometry is not a
+# (rows, columns, depth) triple -- so the frozen whole Workload is validated and used
+# directly. This list is the Compiler's own geometry-owner set
+# (src/open_cake_ir/tasks/catalog_cli.py); keep the two in step.
+GEOMETRY_TASKS = ('aka_nearest_scatter', 'aka_maxpool3d_backward',
+                  'aka_broadcast_mul_gradient')
+
 
 def task_source(task, contract):
     from open_cake_ir.tasks.workloads import create_task
 
     original = contract['workload']
-    if task in ('aka_nearest_scatter', 'aka_maxpool3d_backward'):
+    if task in GEOMETRY_TASKS:
         from open_cake_ir.tasks.workloads import WorkloadContract, validate_workload_document
 
         validate_workload_document(original)
