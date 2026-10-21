@@ -49,7 +49,7 @@ pmc: Wavefronts VALUInsts SALUInsts SFetchInsts FETCH_SIZE GPUBusy
 
 ```bash
 HIP_VISIBLE_DEVICES=1 BWBENCH_TIMEOUT=600 \
-  bash scripts/rocprof.sh IMAGE \
+  bash scripts/rocprof.sh \
   .local/profile/RUN/admission.json \
   .local/profile/RUN/pmc.txt \
   .local/profile/RUN/reports/metrics.csv \
@@ -57,8 +57,9 @@ HIP_VISIBLE_DEVICES=1 BWBENCH_TIMEOUT=600 \
   python3 /work/.local/profile/RUN/harness.py
 ```
 
-Substitute the pinned image, create-only run name and selected observed-idle
-HCU. The harness must use an original source-locked workload and call only the
+Substitute the create-only run name and selected observed-idle HCU. Do not
+pass an image: `scripts/rocprof.sh` reads the Run's pinned image from its
+binding, and refuses a leading `sha256:` or `IMAGE` argument. The harness must use an original source-locked workload and call only the
 arm whose bottleneck is being diagnosed, with JIT warmup accounted for.
 `scripts/rocprof.sh` fails when the CSV lacks a requested metric or the
 expected kernel row, and creates `metrics-validation.json` with both input
