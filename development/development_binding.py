@@ -35,7 +35,9 @@ def render_task(template, binding):
                        'is supported; do not replace it with an unrelated repeated search.\n')
     if binding['task'] in ('aka_nearest_scatter', 'aka_maxpool3d_backward',
                            'aka_hard_sigmoid_gradient', 'aka_select_gradient',
-                           'aka_segment_tile_repeat', 'aka_affine_nhwc'):
+                           'aka_segment_tile_repeat', 'aka_affine_nhwc',
+                           'aka_broadcast_mul_gradient', 'aka_rowwise_broadcast_first_add',
+                           'aka_row_first_word_broadcast'):
         rendered += ('\n## Original Task instructions and reference\n\n'
                      'After the mandatory profiling-skill intake and before authoring, read '
                      'agent_instructions() and reference_source() in the exact pinned owner:\n'
