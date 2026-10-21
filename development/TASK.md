@@ -75,8 +75,8 @@ For profiling, set HIP_VISIBLE_DEVICES to binding.hcu only for the host-side
 scripts/rocprof.sh wrapper. Inside the admitted single-device container, keep the
 gateway-established logical device; never override it with the physical HCU ordinal.
 Set BWBENCH_QUEUE_TIMEOUT=300, BWBENCH_TIMEOUT=600 and
-BWBENCH_LATEST_START_EPOCH=search_stop_at_epoch-630. Read the exact image value from
-campaign/development-binding.json; do not reconstruct or manually retype its digest.
+BWBENCH_LATEST_START_EPOCH=search_stop_at_epoch-630. scripts/rocprof.sh takes no image
+argument; it reads the pinned image from campaign/development-binding.json.
 
 Keep concise hypothesis/evidence/next-step notes in JOURNAL.md. Record owning-layer leads
 and counterexamples in JOURNAL/EVOLUTION.md and HANDOFF.md. Separate candidate errors,
