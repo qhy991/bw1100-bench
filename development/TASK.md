@@ -28,6 +28,10 @@ The adapter preserves your source, canonical assessment, unchanged emitted kerne
 all original oracle checks, unprofiled callable samples and device release receipts.
 Do not edit the Compiler, oracle, input snapshots, controls, prior evaluations or gateway.
 A faster diagnostic sample is not a community-baseline win or an independent Bench score.
+Each accepted outcome also carries kernel_time: rocprof device duration of the generated
+kernels on the primary case, from a separate profiled admission. primary_us includes about
+50 us of host launch and synchronize on this device, so compare candidates by
+kernel_time.median_us when it is present; kernel_time_unavailable says why when it is not.
 
 Use the new capabilities when relevant: typed register transpose, explicit OCML FP32 FMA,
 selected store-loop depth, pure/select/loop width transformations and HSACO resource feedback.

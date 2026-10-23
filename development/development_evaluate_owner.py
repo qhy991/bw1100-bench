@@ -16,4 +16,21 @@ if code:
  reason=device_failure_is_infrastructure(folder)
  if reason:halt(b,reason,str(folder.relative_to(R)))
  (folder/'outcome.json').write_text(json.dumps({'id':a.id,'phase':a.phase,'status':'device_failed','exit_code':code,'scope':'development only'},indent=2));raise SystemExit(code)
-code=subprocess.call(['bash','scripts/dtk.sh','cpu',b['image'],'python3','campaign/development_evaluate.py','--candidate',a.candidate,'--id',a.id,'--phase','compare','--result-phase',a.phase]);raise SystemExit(code)
+code=subprocess.call(['bash','scripts/dtk.sh','cpu',b['image'],'python3','campaign/development_evaluate.py','--candidate',a.candidate,'--id',a.id,'--phase','compare','--result-phase',a.phase])
+if code or json.loads((folder/'outcome.json').read_text()).get('status')!='accepted':raise SystemExit(code)
+# Profiled kernel time is diagnostic feedback; its failure never changes the accepted outcome.
+note=None;timeout=min(300,int(stop-time.time())-30)
+if timeout<10 or stopped(b) or (a.phase=='search' and (R/'campaign/SEARCH_CLOSE.json').exists()):note='no time or admission left for the profiled kernel-time pass'
+else:
+ (folder/'kernel-time.pmc').write_text('pmc: GPUBusy\n')
+ rel=lambda name:str((folder/name).relative_to(R))
+ cmd=['python3','scripts/hcu_run.py','--image',b['image'],'--device',str(b['hcu']),'--timeout',str(timeout),'--queue-timeout','300','--latest-start-epoch',str(stop-timeout-30),'--receipt',rel('kernel-time-admission.json'),'--','env','TRITON_F32_DEFAULT=ieee','TRITON_CACHE_DIR=/work/.local/triton-cache','/opt/dtk/rocprofiler/bin/rocprof','-i','/work/'+rel('kernel-time.pmc'),'--timestamp','on','-o','/work/'+rel('kernel-time.csv'),'python3','campaign/development_kernel_time.py','--emission',rel('emission.json')]
+ with (folder/'kernel-time.log').open('x') as log:pcode=subprocess.call(cmd,stdout=log,stderr=subprocess.STDOUT)
+ if pcode:note='profiled kernel-time pass exited %d; see kernel-time.log'%pcode
+ else:
+  pcode=subprocess.call(['bash','scripts/dtk.sh','cpu',b['image'],'python3','campaign/development_kernel_time.py','--emission',rel('emission.json'),'--summarize',rel('kernel-time.csv'),'--output',rel('kernel-time.json')])
+  if pcode:note='kernel-time summary exited %d'%pcode
+outcome=json.loads((folder/'outcome.json').read_text())
+outcome['kernel_time']=json.loads((folder/'kernel-time.json').read_text()) if note is None else None
+if note:outcome['kernel_time_unavailable']=note
+(folder/'outcome.json').write_text(json.dumps(outcome,indent=2)+'\n');raise SystemExit(0)
