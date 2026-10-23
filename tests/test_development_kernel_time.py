@@ -71,5 +71,66 @@ class Summary(unittest.TestCase):
             kernel_time.summarize(self.launches([3_000] * 39), {'_mma_r16_c64_k64_w4_s1_kernel'}, 30)
 
 
+class OwnerKernelTimePass(unittest.TestCase):
+    """Run the owner with its subprocesses replaced; inspect what it asks rocprof to do."""
+
+    def run_owner(self, profiled_code=0):
+        import json, runpy, shutil, subprocess, sys, tempfile
+        temp = Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, temp)
+        (temp / 'campaign/evaluations/e1').mkdir(parents=True)
+        for name in ('development_evaluate_owner.py', 'development_stop.py'):
+            shutil.copyfile(ROOT / 'development' / name, temp / 'campaign' / name)
+        (temp / 'campaign/development-binding.json').write_text(json.dumps(dict(
+            image='img', hcu=5, batch_stop_file=str(temp / 'STOP.json'))))
+        (temp / 'campaign/deadline.json').write_text(json.dumps(dict(
+            search_stop_at_epoch=10**12, stop_at_epoch=10**12)))
+        folder = temp / 'campaign/evaluations/e1'
+        calls = []
+
+        def call(argv, **kwargs):
+            calls.append(argv)
+            if '--phase' in argv and argv[argv.index('--phase') + 1] == 'emit':
+                (folder / 'emission.json').write_text('{}')
+            elif '--phase' in argv:
+                (folder / 'outcome.json').write_text(json.dumps(dict(id='e1', status='accepted')))
+            elif '--summarize' in argv:
+                (folder / 'kernel-time.json').write_text(json.dumps(dict(median_us=9.4)))
+            elif any('rocprof' in part for part in argv):
+                return profiled_code
+            return 0
+
+        old = (subprocess.call, sys.argv[:], sys.path[:], Path.cwd())
+        subprocess.call = call
+        sys.argv = ['owner', '--candidate', 'c.py', '--id', 'e1']
+        sys.path.insert(0, str(temp / 'campaign'))
+        try:
+            with self.assertRaises(SystemExit) as stop:
+                runpy.run_path(str(temp / 'campaign/development_evaluate_owner.py'), run_name='__main__')
+        finally:
+            subprocess.call, sys.argv, sys.path = old[0], old[1], old[2]
+            import os; os.chdir(old[3])
+            sys.modules.pop('development_stop', None)
+        return stop.exception.code, calls, json.loads((folder / 'outcome.json').read_text()), folder
+
+    def test_profiled_pass_records_kernel_time_with_a_txt_pmc_input(self):
+        code, calls, outcome, folder = self.run_owner()
+        self.assertEqual(code, 0)
+        [profiled] = [argv for argv in calls if any('rocprof' in part for part in argv)]
+        pmc = profiled[profiled.index('-i') + 1]
+        self.assertTrue(pmc.endswith('.txt'), pmc)
+        self.assertEqual((folder / Path(pmc).name).read_text(), 'pmc: GPUBusy\n')
+        self.assertIn('--timestamp', profiled)
+        self.assertEqual(outcome['kernel_time'], {'median_us': 9.4})
+        self.assertEqual(outcome['status'], 'accepted')
+
+    def test_a_failed_profiled_pass_keeps_the_accepted_outcome(self):
+        code, calls, outcome, _ = self.run_owner(profiled_code=1)
+        self.assertEqual(code, 0)
+        self.assertEqual(outcome['status'], 'accepted')
+        self.assertIsNone(outcome['kernel_time'])
+        self.assertIn('exited 1', outcome['kernel_time_unavailable'])
+        self.assertFalse(any('--summarize' in argv for argv in calls))
+
+
 if __name__ == '__main__':
     unittest.main()
