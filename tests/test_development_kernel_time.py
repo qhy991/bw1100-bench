@@ -78,6 +78,32 @@ class Summary(unittest.TestCase):
         with self.assertRaises(ValueError):
             kernel_time.summarize(rows, set(names), 30)
 
+    def test_a_launch_with_different_kernels_is_refused_when_counts_still_split(self):
+        names = ('_mma_r16_c64_k64_w4_s1_kernel', '_cake_epilogue_kernel')
+        rows = self.launches([2_000] * 40, names)
+        rows[0]['KernelName'], rows[3]['KernelName'] = rows[1]['KernelName'], rows[0]['KernelName']
+        with self.assertRaisesRegex(ValueError, 'same candidate kernels'):
+            kernel_time.summarize(rows, set(names), 30)
+
+    def test_a_refused_summary_leaves_no_record_under_campaign(self):
+        """An empty kernel-time.json would read as an unreadable release receipt."""
+        import csv, json, shutil, subprocess, sys, tempfile
+        temp = Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, temp)
+        folder = temp / 'campaign/evaluations/e1'; folder.mkdir(parents=True)
+        shutil.copyfile(ROOT / 'development/development_kernel_time.py', temp / 'campaign/development_kernel_time.py')
+        (folder / 'generated.py').write_text(SOURCE)
+        (folder / 'emission.json').write_text(json.dumps(dict(source='campaign/evaluations/e1/generated.py')))
+        with (folder / 'kernel-time.csv').open('w', newline='') as stream:
+            writer = csv.DictWriter(stream, ['KernelName', 'DispatchNs', 'BeginNs', 'EndNs'])
+            writer.writeheader(); writer.writerow(row('other', 1, 2, 3))
+        result = subprocess.run([sys.executable, 'campaign/development_kernel_time.py', '--emission',
+                                 'campaign/evaluations/e1/emission.json', '--summarize',
+                                 'campaign/evaluations/e1/kernel-time.csv', '--output',
+                                 'campaign/evaluations/e1/kernel-time.json'], cwd=temp, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('_mma_r16', result.stderr)
+        self.assertFalse((folder / 'kernel-time.json').exists())
+
     def test_no_candidate_kernel_names_the_expected_kernels(self):
         with self.assertRaisesRegex(ValueError, '_mma_r16'):
             kernel_time.summarize([row('other', 1, 2, 3)], {'_mma_r16_c64_k64_w4_s1_kernel'}, 30)

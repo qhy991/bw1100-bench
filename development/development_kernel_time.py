@@ -93,8 +93,11 @@ def main():
     names = kernel_names((R / record['source']).read_text())
     with (R / args.summarize).open() as stream:
         rows = list(csv.DictReader(stream))
+    # Summarize before creating the file: an empty record under campaign/ reads as an
+    # unreadable release receipt and would hold the card.
+    result = summarize(rows, names, REPETITIONS)
     with (R / args.output).open('x') as stream:
-        json.dump(summarize(rows, names, REPETITIONS), stream, indent=2)
+        json.dump(result, stream, indent=2)
         stream.write('\n')
 
 
