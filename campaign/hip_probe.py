@@ -341,7 +341,7 @@ def run_probe(root, identity, request_name, skip_reason=''):
                         cwd=root, env=env, stdout=log, stderr=subprocess.STDOUT)
                 unchanged()
                 if code or not read(folder / 'comparison.json')['numerically_passed']:
-                    raise ValueError('Native original five-case comparison failed')
+                    raise ValueError('Native original all-case comparison failed')
             if time.time() > deadline['search_stop_at_epoch']:
                 raise ValueError('Native result completed after the original search cutoff')
             outcome['status'] = 'measurements_retained_pending_review'

@@ -25,10 +25,32 @@ def halt(binding, reason, source):
         pass
 
 
-def device_failure_is_infrastructure(folder):
+LOCK_WAIT_TIMEOUT = 'timed out waiting for this HCU lock; no GPU admitted'
+
+
+def lock_wait_timed_out(folder, receipt='admission.json', log_name='device.log'):
+    """A bounded wait on a busy sibling's lock: nothing was admitted or touched.
+
+    hcu_run.py raises this only from _acquire_hcu_lock, before it inspects the image,
+    observes the device or writes admission.json. It is the expected outcome when
+    several authors share one HCU, so it is a resource wait for this evaluation alone,
+    not a fault that should stop every other Run on the card.
+    """
+    if (folder / receipt).exists():
+        return False
+    try:
+        log = (folder / log_name).read_text(errors='replace')
+    except OSError:
+        return False
+    return LOCK_WAIT_TIMEOUT in log
+
+
+def device_failure_is_infrastructure(folder, receipt='admission.json', log_name='device.log'):
     """Candidate compilation/numerics failures remain candidate evidence."""
-    admission = folder / 'admission.json'
-    terminal = folder / 'admission-terminal.json'
+    if lock_wait_timed_out(folder, receipt, log_name):
+        return None
+    admission = folder / receipt
+    terminal = folder / (Path(receipt).stem + '-terminal.json')
     if admission.exists():
         try:
             after = json.loads(terminal.read_text())
@@ -38,13 +60,13 @@ def device_failure_is_infrastructure(folder):
                 after.get('after_vram') != '0%' or after.get('after_kfd_visible') is not False):
             return 'device release is unknown or incomplete'
     try:
-        log = (folder / 'device.log').read_text(errors='replace')
+        log = (folder / log_name).read_text(errors='replace')
     except OSError:
         return 'device failure log is unavailable'
     signatures = (
         'No CUDA GPUs are available', 'no valid DCUs', '0 active drivers',
         'HSA_STATUS_ERROR_OUT_OF_RESOURCES', 'HCU_DEVICE_IDENTITY_FAILED',
-        'timed out waiting for this HCU lock', 'permission denied while trying to connect to the Docker',
+        'permission denied while trying to connect to the Docker',
         'Cannot connect to the Docker daemon', 'could not select device driver',
     )
     if (any(signature.lower() in log.lower() for signature in signatures)

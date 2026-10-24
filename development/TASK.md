@@ -4,21 +4,22 @@ This is a registered main Task on gfx938 at Compiler {compiler}.
 It is Compiler-development evidence, separate from bw1100-bench performance evidence.
 Use only this Run, its pinned Compiler, installed skills and canonical task reference.
 Do not inspect Bench candidates/results or another development Run. Reference access is
-known-kernel reproduction of your canonical starter and the declared prior development
+known-kernel reproduction of your canonical starter and any explicitly declared prior development
 candidate in campaign/inherited. Filesystem isolation is not established.
 
 Read campaign/development-binding.json, workload.json, deadline.json and candidates/starter.py.
-Keep the catalog's declared rows={rows}, columns={columns}, depth={depth}, every original
-case, dtype, ABI, oracle and tolerance. Read .deps/cake-ir/AGENTS.md and docs/BENCHMARK_PROTOCOL.md,
+Keep the complete named geometry in campaign/original-workload.json, every original
+case, dtype, ABI, oracle and tolerance. The catalog's legacy rows/columns/depth aliases
+do not replace a named-geometry Task. Read .deps/cake-ir/AGENTS.md and docs/BENCHMARK_PROTOCOL.md,
 docs/IR_GUIDE.md, docs/AUTHORING_CONTRACT.md, docs/REGISTER_TRANSPOSE.md,
 docs/DCU_STORE_LOOP_STAGES.md, docs/PROGRAM_MAP_FRONTEND.md,
 docs/MULTI_REGION_MMA.md and docs/wiki/primitives.md. Read the exact profiling skill
 from the intake and the installed bw1100-kernelwiki mechanism pages before kernel changes.
 
-Ralph owns candidate optimization. First evaluate the canonical starter, then evaluate
+Ralph owns candidate optimization. First evaluate the canonical starter, then, only if inherited provenance is present, evaluate
 the source named by campaign/inherited/provenance.json with a new unique evaluation ID. Its historical source
 and provenance are declared material, not a correctness or timing result under this
-Compiler. Requalify it on all five original cases inside this Run's budget. Keep it
+Compiler. Requalify it on all original task-owned cases inside this Run's budget. Keep it
 separate from candidates/starter.py. Then create structurally different Cake candidates.
 Keep authored candidates under campaign/candidates and generated tool stages at their
 original campaign/compiler-actions paths so emission retains their origin. For Cake evaluation use:
@@ -27,6 +28,12 @@ The adapter preserves your source, canonical assessment, unchanged emitted kerne
 all original oracle checks, unprofiled callable samples and device release receipts.
 Do not edit the Compiler, oracle, input snapshots, controls, prior evaluations or gateway.
 A faster diagnostic sample is not a community-baseline win or an independent Bench score.
+Each accepted evaluation also writes kernel-time-outcome.json beside outcome.json:
+kernel_time is the rocprof device duration of the generated kernels on the primary case,
+from a separate profiled admission, and kernel_time_unavailable says why it is missing.
+primary_us includes about 50 us of host launch and synchronize on this device, so use
+kernel_time to see whether a schedule change moved the kernel itself. It is diagnostic:
+nomination, SEARCH_CLOSE and owner confirmation still rank by the primary_us median.
 
 Use the new capabilities when relevant: typed register transpose, explicit OCML FP32 FMA,
 selected store-loop depth, pure/select/loop width transformations and HSACO resource feedback.
@@ -41,7 +48,8 @@ For a GPU mechanism use Profile -> Diagnose -> Plan. Prewarm JIT libraries and c
 actual target-kernel rows through scripts/rocprof.sh and the existing HCU gateway. Use the
 installed analyzer and requested metrics; keep failed collections and specific skip reasons.
 Do not infer bandwidth from reads alone, achieved occupancy from static allocation, or
-speed from instrumented duration. Inspect the actual generated source and ISA.
+speed from instrumented duration; kernel_time is the one profiled duration the adapter
+records, and it diagnoses direction rather than scoring a candidate. Inspect the actual generated source and ISA.
 
 When a concrete hypothesis cannot be expressed or lowered, retain the minimal legal
 or refused Schedule, exact diagnostic and supported transforms considered. Investigate
@@ -49,7 +57,7 @@ the installed DTK, OCML, LLVM and gfx938 instruction path. A HIP probe is requir
 within this Run's remaining search budget. Use campaign/hip_probe.py and read
 docs/NATIVE-EXPLORATION.md for the owned source closure, prepare()/run() ABI and gap
 dossier. If the budget or infrastructure prevents execution, retain the specific
-reason and evidence with --skip-reason. Preserve all five original cases and the
+reason and evidence with --skip-reason. Preserve all original task-owned cases and the
 canonical Workload ABI. Native observations stay in campaign/engineering, outside
 Cake evaluation, nomination and confirmation. Record the mechanism, counterexamples,
 missing Cake commitment and proposed next owner for a reviewed successor. Candidate
@@ -74,8 +82,8 @@ For profiling, set HIP_VISIBLE_DEVICES to binding.hcu only for the host-side
 scripts/rocprof.sh wrapper. Inside the admitted single-device container, keep the
 gateway-established logical device; never override it with the physical HCU ordinal.
 Set BWBENCH_QUEUE_TIMEOUT=300, BWBENCH_TIMEOUT=600 and
-BWBENCH_LATEST_START_EPOCH=search_stop_at_epoch-630. Read the exact image value from
-campaign/development-binding.json; do not reconstruct or manually retype its digest.
+BWBENCH_LATEST_START_EPOCH=search_stop_at_epoch-630. scripts/rocprof.sh takes no image
+argument; it reads the pinned image from campaign/development-binding.json.
 
 Keep concise hypothesis/evidence/next-step notes in JOURNAL.md. Record owning-layer leads
 and counterexamples in JOURNAL/EVOLUTION.md and HANDOFF.md. Separate candidate errors,
@@ -88,7 +96,7 @@ Optional early search closure: after all your GPU/profiling requests have termin
 receipts, write campaign/SEARCH_CLOSE.json with candidate_id naming your current accepted
 diagnostic nominee and a nonempty rationale tied to your retained evaluations and failed
 hypotheses. Then start no new device work. A pending request is not acceptance. The owner
-checks the five-case accepted outcome, exact pinned Compiler emission, nominee and rationale,
+checks the all-case accepted outcome, exact pinned Compiler emission, nominee and rationale,
 and all admission release receipts after your current agent round returns. Ralph then
 returns naturally on approval and the owner begins confirmation. No model tool or GPU
 process is interrupted to honor this request. Read campaign/search-close-owner.json if

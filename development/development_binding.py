@@ -6,8 +6,8 @@ import subprocess
 
 KIND = 'registered_task_development'
 ADAPTER_SCRIPTS = ('development_binding.py', 'development_control.py', 'development_device.py',
-                   'development_evaluate.py', 'development_evaluate_owner.py', 'development_launch.py',
-                   'development_prepare.py', 'development_stop.py', 'ralph_flow.py')
+                   'development_evaluate.py', 'development_evaluate_owner.py', 'development_kernel_time.py', 'development_launch.py',
+                   'development_prepare.py', 'development_task_source.py', 'development_stop.py', 'ralph_flow.py')
 SHARED_SCRIPTS = ('campaign/compiler_tools.py', 'campaign/_compiler_tools.py',
                   'campaign/compiler-tools-source.json', 'campaign/launch.py', 'campaign/binding.py', 'scripts/bench_queue.py',
                   'scripts/ralph_profile_intake.py', 'scripts/json_stream.py', 'scripts/queue_handoff.py',
@@ -27,18 +27,37 @@ def render_task(template, binding):
         template = template.replace('{' + key + '}', str(binding[key]))
     warning = ('The canonical gemm_bias starter has a retained mixed_magnitude failure; '
                'preserve the five-case contract and report the result.' if binding['task'] == 'gemm_bias' else '')
-    return template.replace('{starter_warning}', warning)
+    rendered = template.replace('{starter_warning}', warning)
+    if binding.get('hypothesis'):
+        rendered += ('\n## Selected search question\n\n' + binding['hypothesis']
+                     + '\nKeep this search within that question and the original Task contract. '
+                       'Retain the incumbent or record No promotion when no lawful improvement '
+                       'is supported; do not replace it with an unrelated repeated search.\n')
+    if binding['task'] in ('aka_nearest_scatter', 'aka_maxpool3d_backward',
+                           'aka_hard_sigmoid_gradient', 'aka_select_gradient',
+                           'aka_segment_tile_repeat', 'aka_affine_nhwc',
+                           'aka_broadcast_mul_gradient', 'aka_rowwise_broadcast_first_add',
+                           'aka_row_first_word_broadcast'):
+        rendered += ('\n## Original Task instructions and reference\n\n'
+                     'After the mandatory profiling-skill intake and before authoring, read '
+                     'agent_instructions() and reference_source() in the exact pinned owner:\n'
+                     '.deps/cake-ir/src/open_cake_ir/tasks/' + binding['task'] + '.py\n'
+                     'Print both functions with the pinned Compiler package on PYTHONPATH '
+                     'if their returned text is constructed. This is CPU-only original Task '
+                     'material, not another Run or Bench answer. Preserve its complete '
+                     'semantics and all original cases.\n')
+    return rendered
 
 
 def render_agents():
     return '''# Registered Compiler-development Run
-The pinned Compiler Task, original Workload, all five cases and comparator own semantics.
+The pinned Compiler Task, original Workload, all task-owned cases and comparator own semantics.
 Read campaign/TASK.md, development-binding.json, deadline.json and profiling intake.
 Use campaign/development_evaluate_owner.py for Cake candidates and the qualified HCU gateway.
 For a demonstrated Cake expressibility or lowering gap, use campaign/hip_probe.py in this Run.
 Read docs/NATIVE-EXPLORATION.md. Retain a bounded HIP probe or its specific budget/infrastructure skip.
 Native engineering records never enter Cake nomination or confirmation.
-The canonical starter and declared inherited candidate are separate inputs; old outcomes are not inherited.
+The canonical starter and any declared inherited candidate are separate inputs; old outcomes are not inherited.
 The host owner assigns static author slots. Never modify its allocation, controls or terminal records.
 Do not inspect Bench artifacts or another Run. Never touch HCU0 or an unassigned device.
 '''
@@ -61,24 +80,31 @@ def validate_plan(plan, contracts):
         raise ValueError('Expected a registered gfx938 development allocation')
     for field in ('compiler', 'adapter_commit'):
         if not isinstance(plan.get(field), str) or not re.fullmatch('[0-9a-f]{40}', plan[field]):
-            raise ValueError('Select an immutable ' + field + ' after the Bench disposition')
+            raise ValueError('Select an immutable ' + field + ' after the engineering selection')
     controls = plan['controls']
+    if controls['model'] != 'claude/glm-5.3:high':
+        raise ValueError('Preserve the declared GLM-5.3 high author model')
     if (controls['wall_time_seconds'], controls['search_seconds'], controls['confirmation_seconds']) != (10800, 9000, 1800):
         raise ValueError('Preserve the three-hour budget including thirty-minute confirmation')
     if (controls['token_limits'] is not None or type(controls['capacity_per_hcu']) is not int
             or controls['capacity_per_hcu'] not in range(1, 4)):
         raise ValueError('Declare one to three authors per HCU and accounting-only tokens')
     if controls['reference_access'] != 'known_kernel_reproduction_with_declared_development_incumbent':
-        raise ValueError('Declare the canonical starter and inherited development material')
+        raise ValueError('Declare the canonical starter and any inherited development material')
     tasks = contracts['tasks']
     rows = plan['assignments']
     selected = plan.get('task_ids', list(tasks))
-    if (len(tasks) != 53 or not isinstance(selected, list) or not selected
+    if (not tasks or not isinstance(selected, list) or not selected
             or any(not isinstance(task, str) for task in selected)
             or len(set(selected)) != len(selected) or not set(selected) <= set(tasks)):
-        raise ValueError('Select a nonempty unique subset of the intact 53 original tasks')
+        raise ValueError('Select a nonempty unique subset of the frozen task catalog')
     if len(rows) != len(selected) or {row['task'] for row in rows} != set(selected):
         raise ValueError('Assign every selected development task exactly once')
+    if 'hypotheses' in plan and (
+            not isinstance(plan['hypotheses'], dict) or set(plan['hypotheses']) != set(selected)
+            or any(not isinstance(value, str) or not value.strip()
+                   for value in plan['hypotheses'].values())):
+        raise ValueError('Declare one nonempty search hypothesis per selected Task')
     if len({row['root'] for row in rows}) != len(rows):
         raise ValueError('Every development Run needs a unique fresh root')
     for host, config in plan['hosts'].items():
@@ -98,10 +124,12 @@ def validate_plan(plan, contracts):
         if type(row['hcu']) is not int or row['hcu'] not in config['hcus'] or not Path(row['root']).is_absolute():
             raise ValueError('Assignment is outside its declared host HCU set')
         contract = tasks[row['task']]
-        if len(contract['case_ids']) != 5 or len(set(contract['case_ids'])) != 5:
-            raise ValueError('Preserve all five original cases')
+        if not contract['case_ids'] or len(set(contract['case_ids'])) != len(contract['case_ids']):
+            raise ValueError('Preserve every task-owned case')
+        material = row.get('inherited')
+        if material is None:
+            continue
         inherited_path(row)
-        material = row['inherited']
         if not Path(material['source']).is_absolute() or not re.fullmatch('[0-9a-f]{40}', material['compiler']):
             raise ValueError('Declare an exact historical source material and Compiler')
         if not all(isinstance(material.get(key), str) and material[key]
@@ -138,12 +166,14 @@ def reconcile(root, mounted=False):
     if binding['compiler'] != plan['compiler'] or binding['gateway'] != config['gateway']['commit']:
         raise ValueError('Prepared Compiler or qualified gateway changed')
     if read(root / 'campaign/compiler-disposition.json').get('selected_compiler') != binding['compiler']:
-        raise ValueError('Compiler differs from the explicit Bench disposition')
+        raise ValueError('Compiler differs from the explicit engineering selection')
     if binding['home'] != config['home'] or binding['image'] != config['image']:
         raise ValueError('Prepared host environment changed')
     if binding['batch_stop_file'] != str(Path(config['owner_root']) / ('STOP-hcu' + str(row['hcu']) + '.json')):
         raise ValueError('Stop file must belong to this HCU under its host owner')
     contract = original['tasks'][binding['task']]
+    if binding.get('hypothesis') != plan.get('hypotheses', {}).get(binding['task']):
+        raise ValueError('Prepared search hypothesis differs from the frozen plan')
     if any(binding[key] != contract[key] for key in ('rows', 'columns', 'depth', 'case_ids', 'abi')):
         raise ValueError('Prepared task differs from its original shape, cases or ABI')
     if read(root / 'campaign/original-workload.json') != contract['workload']:
@@ -165,7 +195,10 @@ def reconcile(root, mounted=False):
         expected = source_bytes(root, binding['gateway'], name)
         if (root / name).read_bytes() != expected:
             raise ValueError('Qualified gateway file changed: ' + name)
-    material = dict(row['inherited'], source=inherited_path(row))
-    if read(root / 'campaign/inherited/provenance.json') != material:
-        raise ValueError('Inherited source provenance changed')
+    if row.get('inherited') is not None:
+        material = dict(row['inherited'], source=inherited_path(row))
+        if read(root / 'campaign/inherited/provenance.json') != material:
+            raise ValueError('Inherited source provenance changed')
+    elif any((root / 'campaign/inherited').iterdir()):
+        raise ValueError('Undeclared inherited material exists')
     return binding

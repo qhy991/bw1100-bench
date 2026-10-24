@@ -19,7 +19,7 @@ def prepare(plan_path, contracts_path, disposition_path, host, output):
     validate_plan(plan, contracts)
     disposition = read(disposition_path)
     if disposition.get('selected_compiler') != plan['compiler']:
-        raise ValueError('The explicit Bench disposition must select this immutable Compiler')
+        raise ValueError('The explicit engineering selection must select this immutable Compiler')
     clean(ROOT, plan['adapter_commit'])
     identity = source_identity(ROOT)
     config = plan['hosts'][host]
@@ -34,6 +34,8 @@ def prepare(plan_path, contracts_path, disposition_path, host, output):
         raise ValueError('Run roots must be canonical paths without symlink aliases')
     seeds = {}
     for row in selected:
+        if row.get('inherited') is None:
+            continue
         source = Path(row['inherited']['source'])
         if not source.is_file() or source.is_symlink():
             raise ValueError('Inherited source must be a retained ordinary file')
@@ -44,7 +46,8 @@ def prepare(plan_path, contracts_path, disposition_path, host, output):
     subprocess.run([sys.executable, str(ROOT / 'development/catalog.py'), '--compiler-source',
                     str(compiler), '--compiler', plan['compiler'], '--contracts', str(contracts_path),
                     '--plan', str(plan_path), '--host', host], check=True)
-    if any(Path(row['inherited']['source']).read_bytes() != seeds[row['task']] for row in selected):
+    if any(Path(row['inherited']['source']).read_bytes() != seeds[row['task']]
+           for row in selected if row.get('inherited') is not None):
         raise ValueError('Inherited material changed during CPU qualification')
     records = []
     for row in selected:
@@ -69,13 +72,16 @@ def prepare(plan_path, contracts_path, disposition_path, host, output):
             gateway_files=list(GATEWAY_FILES), **plan['controls'],
             **{key: contract[key] for key in ('rows', 'columns', 'depth', 'case_ids', 'abi')},
             batch_stop_file=str(Path(config['owner_root']) / ('STOP-hcu' + str(row['hcu']) + '.json')))
+        if 'hypotheses' in plan:
+            binding['hypothesis'] = plan['hypotheses'][task]
         new_json(run / 'campaign/development-binding.json', binding)
         new_json(run / 'campaign/development-plan.json', plan)
         new_json(run / 'campaign/original-contracts.json', contracts)
         new_json(run / 'campaign/original-workload.json', contract['workload'])
         new_json(run / 'campaign/compiler-disposition.json', disposition)
-        new_json(run / 'campaign/inherited/provenance.json', dict(row['inherited'], source=inherited_path(row)))
-        (run / inherited_path(row)).write_bytes(seeds[task])
+        if row.get('inherited') is not None:
+            new_json(run / 'campaign/inherited/provenance.json', dict(row['inherited'], source=inherited_path(row)))
+            (run / inherited_path(row)).write_bytes(seeds[task])
         (run / 'campaign/budget-3h.yaml').write_text(BUDGET)
         (run / 'campaign/TASK.md').write_text(render_task((ROOT / 'development/TASK.md').read_text(), binding))
         (run / 'AGENTS.md').write_text(render_agents())

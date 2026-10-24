@@ -86,6 +86,75 @@ class DevelopmentTests(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 validate_plan(bad, contracts)
 
+    def test_expanded_catalog_preserves_exact_membership_and_case_domains(self):
+        plan, contracts = allocation(self.root)
+        for index, count in enumerate((29, 29, 9, 4, 8, 7)):
+            task = 'new_' + str(index)
+            contract = copy.deepcopy(contracts['tasks']['task_0'])
+            contract['case_ids'] = ['primary'] + ['case_' + str(i) for i in range(count - 1)]
+            contract['workload']['case_ids'] = contract['case_ids']
+            contracts['tasks'][task] = contract
+            plan['assignments'].append(dict(task=task, host='first', hcu=1,
+                                           root=str(self.root / 'runs' / task)))
+        validate_plan(plan, contracts)
+        self.assertEqual(len(contracts['tasks']), 59)
+        self.assertEqual(sum(len(x['case_ids']) for x in contracts['tasks'].values()), 351)
+        bad = copy.deepcopy(plan)
+        bad['assignments'].pop()
+        with self.assertRaises(ValueError):
+            validate_plan(bad, contracts)
+        bad_contracts = copy.deepcopy(contracts)
+        bad_contracts['tasks']['new_0']['case_ids'].append('primary')
+        with self.assertRaises(ValueError):
+            validate_plan(plan, bad_contracts)
+
+    def test_selected_hypotheses_are_complete_and_nonempty(self):
+        plan, contracts = allocation(self.root)
+        plan['hypotheses'] = {task: 'Test one bounded mapping hypothesis.' for task in contracts['tasks']}
+        validate_plan(plan, contracts)
+        for change in ('missing', 'extra', 'empty', 'not_text'):
+            bad = copy.deepcopy(plan)
+            first = next(iter(contracts['tasks']))
+            if change == 'missing': bad['hypotheses'].pop(first)
+            if change == 'extra': bad['hypotheses']['unselected'] = 'Other question'
+            if change == 'empty': bad['hypotheses'][first] = ' '
+            if change == 'not_text': bad['hypotheses'][first] = 3
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                validate_plan(bad, contracts)
+
+    def test_prepare_delivers_and_reconciles_the_selected_question(self):
+        adapter, plan, contracts = self.sources()
+        plan['hypotheses'] = {task: 'Only test row-statistic broadcast regrouping.'
+                              for task in contracts['tasks']}
+        write(self.root / 'plan.json', plan)
+        with patch.object(prepare, 'ROOT', adapter):
+            prepare.prepare(self.root / 'plan.json', self.root / 'contracts.json',
+                            self.root / 'disposition.json', 'first', self.root / 'allocation.json')
+        run = Path(plan['assignments'][0]['root'])
+        self.assertIn(plan['hypotheses']['task_0'], (run / 'campaign/TASK.md').read_text())
+        self.assertEqual(reconcile(run)['hypothesis'], plan['hypotheses']['task_0'])
+        binding = json.loads((run / 'campaign/development-binding.json').read_text())
+        binding['hypothesis'] = 'Unrelated search'
+        write(run / 'campaign/development-binding.json', binding)
+        git(run, 'add', '.')
+        git(run, 'commit', '-qm', 'Fixture changed hypothesis')
+        with self.assertRaisesRegex(ValueError, 'hypothesis'):
+            reconcile(run)
+
+    def test_starter_only_prepare_has_no_inherited_provenance(self):
+        adapter, plan, contracts = self.sources()
+        row = plan['assignments'][0]
+        del row['inherited']
+        plan['task_ids'] = [row['task']]
+        plan['assignments'] = [row]
+        write(self.root / 'plan.json', plan)
+        with patch.object(prepare, 'ROOT', adapter):
+            prepare.prepare(self.root / 'plan.json', self.root / 'contracts.json',
+                            self.root / 'disposition.json', 'first', self.root / 'allocation.json')
+        run = Path(row['root'])
+        self.assertEqual(list((run / 'campaign/inherited').iterdir()), [])
+        self.assertEqual(reconcile(run)['case_ids'], CASES)
+
     def test_explicit_author_capacity(self):
         plan, contracts = allocation(self.root)
         for capacity in (1, 2, 3):
@@ -316,3 +385,123 @@ Path('campaign/DONE.json').write_text(json.dumps(dict(terminal=True,status='comp
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class DevelopmentTensorTests(unittest.TestCase):
+    def setUp(self):
+        try:
+            import torch
+        except ImportError:
+            self.skipTest('torch is required for tensor ABI fixtures')
+        self.torch = torch
+
+    def test_tensor_inputs_keep_raw_bits_and_snapshot_representation(self):
+        from types import SimpleNamespace
+        from development.development_device import input_tensor, input_snapshots
+        torch = self.torch
+        raw = torch.tensor([0x7f800001, 0x80000000, 1], dtype=torch.uint32).view(torch.float32)
+        arg = SimpleNamespace(name='x', dtype='fp32', shape=(3,))
+        tensor = input_tensor(raw, arg)
+        self.assertTrue(torch.equal(tensor.view(torch.uint8), raw.view(torch.uint8)))
+        self.assertNotEqual(tensor.untyped_storage().data_ptr(), raw.untyped_storage().data_ptr())
+        after = input_snapshots({'x': raw}, {'x': tensor})['x']
+        self.assertIsInstance(after, torch.Tensor)
+        self.assertTrue(torch.equal(after.view(torch.uint8), raw.view(torch.uint8)))
+        self.assertEqual(input_snapshots({'x': [1.0]}, {'x': torch.tensor([1.0])})['x'], [1.0])
+        with self.assertRaises(ValueError):
+            input_tensor(raw.to(torch.float64), arg)
+
+    def test_complete_output_abi_and_fresh_storage(self):
+        from types import SimpleNamespace
+        from development.development_device import native_outputs
+        torch = self.torch
+        args = [SimpleNamespace(name=n, dtype='fp32', shape=(2,), mode='output') for n in ('y', 'z')]
+        workload = SimpleNamespace(document={'semantics': {'output_storage': 'fresh_contiguous'}},
+                                   tensor_abi=lambda _: args)
+        x = torch.tensor([1.0, 2.0])
+        observed, _ = native_outputs(workload, 'primary', (x.clone(), x.clone()), 'cpu', (x,))
+        self.assertEqual(set(observed), {'y', 'z'})
+        observed, _ = native_outputs(workload, 'primary', (x.clone() + 1, x.clone()),
+                                     'cpu', (x,), names=['z', 'y'])
+        self.assertEqual(observed, {'y': [1.0, 2.0], 'z': [2.0, 3.0]})
+        with self.assertRaises(ValueError):
+            native_outputs(workload, 'primary', (x.clone(), x.clone()),
+                           'cpu', (x,), names=['y', 'y'])
+        for outputs in ((x.clone(),), (x.clone(), x.clone(), x.clone()),
+                        (x.double(), x.clone()), (x.reshape(1, 2), x.clone()),
+                        (x, x.clone()), (x.clone(), x.clone()[::2])):
+            with self.subTest(outputs=outputs), self.assertRaises(ValueError):
+                native_outputs(workload, 'primary', outputs, 'cpu', (x,))
+        shared = x.clone()
+        with self.assertRaises(ValueError):
+            native_outputs(workload, 'primary', (shared, shared), 'cpu', (x,))
+
+    @unittest.skipUnless(os.environ.get('BWBENCH_CAKE_SOURCE'), 'Set BWBENCH_CAKE_SOURCE for canonical Workload replay')
+    def test_original_multioutput_task_accepts_disjoint_spans_and_rejects_overlap(self):
+        source = os.environ['BWBENCH_CAKE_SOURCE']
+        script = '''
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(sys.argv[1]) / 'src'))
+import torch
+from open_cake_ir.tasks.workloads import create_task, WorkloadContract, materialize_evaluation_case
+from open_cake_ir.evaluation.core import compare_tile_outputs
+from development.development_device import input_tensor, input_snapshots, native_outputs
+doc, _ = create_task('per_channel_moments', backend='triton-dcu', rows=4, columns=4)
+w = WorkloadContract(doc)
+for case_id in w.case_ids:
+    before, expected = materialize_evaluation_case(w, case_id)
+    values = {arg.name: input_tensor(before[arg.name], arg)
+              for arg in w.tensor_abi(case_id) if arg.mode == 'input'}
+    storage = torch.empty(8)
+    outputs = (storage[:4], storage[4:])
+    for name, output in zip(('mean', 'mean_square'), outputs, strict=True):
+        output.copy_(torch.tensor(expected[name], dtype=torch.float32))
+    assert outputs[0].untyped_storage().data_ptr() == outputs[1].untyped_storage().data_ptr()
+    observed, metadata = native_outputs(w, case_id, outputs, 'cpu', values.values())
+    ok, metrics = compare_tile_outputs(w, before, expected, observed, input_snapshots(before, values))
+    assert ok, (case_id, metrics)
+    assert set(metadata) == {'mean', 'mean_square'}
+    for bad in ((storage[:4], storage[3:7]), (values['x'].reshape(-1)[1:5], storage[4:])):
+        try:
+            native_outputs(w, case_id, bad, 'cpu', values.values())
+        except ValueError as error:
+            assert 'overlaps' in str(error), error
+        else:
+            raise AssertionError('Overlapping output byte spans must fail')
+print('5 canonical multi-output cases accept disjoint shared storage and reject output/input overlaps')
+'''
+        subprocess.run([sys.executable, '-c', script, source], cwd=ROOT, check=True)
+
+    @unittest.skipUnless(os.environ.get('BWBENCH_CAKE_SOURCE'), 'Set BWBENCH_CAKE_SOURCE for canonical Workload replay')
+    def test_affine_all_cases_preserve_inputs_under_canonical_comparator(self):
+        source = os.environ['BWBENCH_CAKE_SOURCE']
+        script = '''
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(sys.argv[1]) / 'src'))
+import torch
+from open_cake_ir.tasks.workloads import create_task, WorkloadContract, materialize_evaluation_case
+from open_cake_ir.evaluation.core import compare_tile_outputs
+from development.development_device import input_tensor, input_snapshots, native_outputs
+for task, dims in [('aka_affine_nhwc', dict(rows=7, columns=257, depth=None)),
+                   ('aka_affine_nchw', dict(rows=2, columns=5, depth=257))]:
+    doc, _ = create_task(task, backend='triton-dcu', **dims)
+    w = WorkloadContract(doc)
+    assert len(w.case_ids) == 29
+    for case_id in w.case_ids:
+        before, expected = materialize_evaluation_case(w, case_id)
+        values = {arg.name: input_tensor(before[arg.name], arg)
+                  for arg in w.tensor_abi(case_id) if arg.mode == 'input'}
+        outputs = tuple(torch.tensor(expected[arg.name], dtype=torch.float32).reshape(arg.shape)
+                        for arg in w.tensor_abi(case_id) if arg.mode == 'output')
+        observed, _ = native_outputs(w, case_id, outputs, 'cpu', values.values())
+        after = input_snapshots(before, values)
+        ok, metrics = compare_tile_outputs(w, before, expected, observed, after)
+        assert ok, (task, case_id, metrics)
+        name = next(iter(after))
+        after[name].view(torch.uint8)[0] ^= 1
+        assert not compare_tile_outputs(w, before, expected, observed, after)[1]['inputs_unchanged']
+print('58 canonical affine cases preserve raw input bits and reject input mutation')
+'''
+        subprocess.run([sys.executable, '-c', script, source], cwd=ROOT, check=True)

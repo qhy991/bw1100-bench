@@ -1,17 +1,26 @@
 #!/usr/bin/env bash
 # Run a diagnostic rocprof pass through this repository's HCU admission.
+# The image comes from the Run's own binding (scripts/pinned_image.py), never from
+# the caller: a retyped digest (R6) and a pasted `IMAGE` placeholder (R9) each made
+# the gateway write the HCU-wide stop file before any device work.
 set -euo pipefail
-(( $# >= 6 )) || {
-  printf 'usage: rocprof.sh IMAGE RECEIPT PMC_FILE REPORT_CSV KERNEL_REGEX COMMAND [ARGS...]\n' >&2
+(( $# >= 5 )) || {
+  printf 'usage: rocprof.sh RECEIPT PMC_FILE REPORT_CSV KERNEL_REGEX COMMAND [ARGS...]\n' >&2
   exit 2
 }
-image=$1
-receipt=$2
-pmc=$3
-report=$4
-kernel_regex=$5
-shift 5
+case "$1" in
+  sha256:*|IMAGE)
+    printf 'rocprof.sh no longer takes an image; it reads the pinned image from the Run binding.\n' >&2
+    printf 'usage: rocprof.sh RECEIPT PMC_FILE REPORT_CSV KERNEL_REGEX COMMAND [ARGS...]\n' >&2
+    exit 2 ;;
+esac
+receipt=$1
+pmc=$2
+report=$3
+kernel_regex=$4
+shift 4
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
+image=$(python3 "$root/scripts/pinned_image.py" "$root")
 for path in "$pmc" "$report"; do
   case "$path" in
     /*|..|../*|*/../*|*/..) printf 'path must stay relative to the repository: %s\n' "$path" >&2; exit 2 ;;
