@@ -28,10 +28,12 @@ The adapter preserves your source, canonical assessment, unchanged emitted kerne
 all original oracle checks, unprofiled callable samples and device release receipts.
 Do not edit the Compiler, oracle, input snapshots, controls, prior evaluations or gateway.
 A faster diagnostic sample is not a community-baseline win or an independent Bench score.
-Each accepted outcome also carries kernel_time: rocprof device duration of the generated
-kernels on the primary case, from a separate profiled admission. primary_us includes about
-50 us of host launch and synchronize on this device, so compare candidates by
-kernel_time.median_us when it is present; kernel_time_unavailable says why when it is not.
+Each accepted evaluation also writes kernel-time-outcome.json beside outcome.json:
+kernel_time is the rocprof device duration of the generated kernels on the primary case,
+from a separate profiled admission, and kernel_time_unavailable says why it is missing.
+primary_us includes about 50 us of host launch and synchronize on this device, so use
+kernel_time to see whether a schedule change moved the kernel itself. It is diagnostic:
+nomination, SEARCH_CLOSE and owner confirmation still rank by the primary_us median.
 
 Use the new capabilities when relevant: typed register transpose, explicit OCML FP32 FMA,
 selected store-loop depth, pure/select/loop width transformations and HSACO resource feedback.
@@ -46,7 +48,8 @@ For a GPU mechanism use Profile -> Diagnose -> Plan. Prewarm JIT libraries and c
 actual target-kernel rows through scripts/rocprof.sh and the existing HCU gateway. Use the
 installed analyzer and requested metrics; keep failed collections and specific skip reasons.
 Do not infer bandwidth from reads alone, achieved occupancy from static allocation, or
-speed from instrumented duration. Inspect the actual generated source and ISA.
+speed from instrumented duration; kernel_time is the one profiled duration the adapter
+records, and it diagnoses direction rather than scoring a candidate. Inspect the actual generated source and ISA.
 
 When a concrete hypothesis cannot be expressed or lowered, retain the minimal legal
 or refused Schedule, exact diagnostic and supported transforms considered. Investigate

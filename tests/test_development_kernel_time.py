@@ -60,7 +60,7 @@ class Summary(unittest.TestCase):
         self.assertEqual(result['kernels_per_launch'], 2)
         self.assertEqual(result['median_us'], 4.0)
 
-    def test_other_processes_kernels_are_not_counted(self):
+    def test_same_process_framework_kernels_are_not_counted(self):
         rows = self.launches([3_000] * 40)
         rows.insert(5, row('at::native::distribution_elementwise_grid_stride_kernel', 1, 2, 9_000_000))
         result = kernel_time.summarize(rows, {'_mma_r16_c64_k64_w4_s1_kernel'}, 30)
@@ -70,11 +70,23 @@ class Summary(unittest.TestCase):
         with self.assertRaises(ValueError):
             kernel_time.summarize(self.launches([3_000] * 39), {'_mma_r16_c64_k64_w4_s1_kernel'}, 30)
 
+    def test_uneven_per_kernel_counts_are_refused_even_when_the_total_splits(self):
+        names = ('_mma_r16_c64_k64_w4_s1_kernel', '_cake_epilogue_kernel')
+        rows = self.launches([2_000] * 40, names)
+        rows.remove(next(r for r in rows if r['KernelName'].startswith('"_cake')))
+        rows.append(row(names[0], 10**9, 10**9, 10**9 + 2_000))
+        with self.assertRaises(ValueError):
+            kernel_time.summarize(rows, set(names), 30)
+
+    def test_no_candidate_kernel_names_the_expected_kernels(self):
+        with self.assertRaisesRegex(ValueError, '_mma_r16'):
+            kernel_time.summarize([row('other', 1, 2, 3)], {'_mma_r16_c64_k64_w4_s1_kernel'}, 30)
+
 
 class OwnerKernelTimePass(unittest.TestCase):
     """Run the owner with its subprocesses replaced; inspect what it asks rocprof to do."""
 
-    def run_owner(self, profiled_code=0):
+    def run_owner(self, profiled_code=0, stop_at=10**12, profiled_effect=None):
         import json, runpy, shutil, subprocess, sys, tempfile
         temp = Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, temp)
         (temp / 'campaign/evaluations/e1').mkdir(parents=True)
@@ -83,7 +95,7 @@ class OwnerKernelTimePass(unittest.TestCase):
         (temp / 'campaign/development-binding.json').write_text(json.dumps(dict(
             image='img', hcu=5, batch_stop_file=str(temp / 'STOP.json'))))
         (temp / 'campaign/deadline.json').write_text(json.dumps(dict(
-            search_stop_at_epoch=10**12, stop_at_epoch=10**12)))
+            search_stop_at_epoch=stop_at, stop_at_epoch=stop_at)))
         folder = temp / 'campaign/evaluations/e1'
         calls = []
 
@@ -96,6 +108,8 @@ class OwnerKernelTimePass(unittest.TestCase):
             elif '--summarize' in argv:
                 (folder / 'kernel-time.json').write_text(json.dumps(dict(median_us=9.4)))
             elif any('rocprof' in part for part in argv):
+                if profiled_effect:
+                    profiled_effect(folder)
                 return profiled_code
             return 0
 
@@ -110,7 +124,9 @@ class OwnerKernelTimePass(unittest.TestCase):
             subprocess.call, sys.argv, sys.path = old[0], old[1], old[2]
             import os; os.chdir(old[3])
             sys.modules.pop('development_stop', None)
-        return stop.exception.code, calls, json.loads((folder / 'outcome.json').read_text()), folder
+        self.stop_file = temp / 'STOP.json'
+        self.assertEqual(json.loads((folder / 'outcome.json').read_text()), dict(id='e1', status='accepted'))
+        return stop.exception.code, calls, json.loads((folder / 'kernel-time-outcome.json').read_text()), folder
 
     def test_profiled_pass_records_kernel_time_with_a_txt_pmc_input(self):
         code, calls, outcome, folder = self.run_owner()
@@ -121,15 +137,40 @@ class OwnerKernelTimePass(unittest.TestCase):
         self.assertEqual((folder / Path(pmc).name).read_text(), 'pmc: GPUBusy\n')
         self.assertIn('--timestamp', profiled)
         self.assertEqual(outcome['kernel_time'], {'median_us': 9.4})
-        self.assertEqual(outcome['status'], 'accepted')
+        receipt = profiled[profiled.index('--receipt') + 1]
+        self.assertTrue(receipt.endswith('kernel-time-admission.json'), receipt)
 
     def test_a_failed_profiled_pass_keeps_the_accepted_outcome(self):
         code, calls, outcome, _ = self.run_owner(profiled_code=1)
         self.assertEqual(code, 0)
-        self.assertEqual(outcome['status'], 'accepted')
         self.assertIsNone(outcome['kernel_time'])
         self.assertIn('exited 1', outcome['kernel_time_unavailable'])
         self.assertFalse(any('--summarize' in argv for argv in calls))
+        self.assertFalse(self.stop_file.exists())
+
+    def test_an_unconfirmed_release_of_the_profiled_admission_stops_the_card(self):
+        import json
+        def admitted_without_terminal(folder):
+            (folder / 'kernel-time-admission.json').write_text(json.dumps(dict(schema='s', job_id='j')))
+        code, _, outcome, _ = self.run_owner(profiled_code=1, profiled_effect=admitted_without_terminal)
+        self.assertEqual(code, 0)
+        self.assertIn('no readable terminal', outcome['kernel_time_unavailable'])
+        self.assertIn('no readable terminal', json.loads(self.stop_file.read_text())['reason'])
+
+    def test_an_infrastructure_signature_in_the_profiled_log_stops_the_card(self):
+        def unavailable(folder):
+            with (folder / 'kernel-time.log').open('a') as log:
+                log.write('OCI runtime create failed: device with id=5 is unavailable\n')
+        code, _, outcome, _ = self.run_owner(profiled_code=1, profiled_effect=unavailable)
+        self.assertIn('device runtime', outcome['kernel_time_unavailable'])
+        self.assertTrue(self.stop_file.exists())
+
+    def test_too_little_time_skips_the_pass_with_its_reason(self):
+        import time
+        code, calls, outcome, _ = self.run_owner(stop_at=int(time.time()) + 100)
+        self.assertEqual(code, 0)
+        self.assertFalse(any(any('rocprof' in part for part in argv) for argv in calls))
+        self.assertIn('before the phase stop', outcome['kernel_time_unavailable'])
 
 
 if __name__ == '__main__':

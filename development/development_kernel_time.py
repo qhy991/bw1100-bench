@@ -15,7 +15,6 @@ import sys
 R = Path(__file__).resolve().parents[1]
 REPETITIONS = 30
 WARMUP = 10
-PMC = 'pmc: GPUBusy\n'
 
 
 def kernel_names(source):
@@ -43,13 +42,18 @@ def summarize(rows, names, launches):
         if kernel.endswith('.kd'):
             kernel = kernel[:-3]
         if kernel in names:
-            durations.append((int(row['DispatchNs']), int(row['EndNs']) - int(row['BeginNs'])))
+            durations.append((int(row['DispatchNs']), kernel, int(row['EndNs']) - int(row['BeginNs'])))
     durations.sort()
-    if not durations or len(durations) % (WARMUP + launches):
-        raise ValueError('kernel records %d do not split into %d launches' % (len(durations), WARMUP + launches))
+    counts = {name: sum(kernel == name for _, kernel, _ in durations) for name in {k for _, k, _ in durations}}
+    if not durations or any(count % (WARMUP + launches) for count in counts.values()):
+        raise ValueError('kernel records %s do not split into %d launches; candidate kernels %s'
+                         % (counts or 0, WARMUP + launches, sorted(names)))
     per_launch = len(durations) // (WARMUP + launches)
-    timed = [sum(ns for _, ns in durations[i:i + per_launch]) / 1e3
-             for i in range(per_launch * WARMUP, len(durations), per_launch)]
+    groups = [durations[i:i + per_launch] for i in range(0, len(durations), per_launch)]
+    first = sorted(kernel for _, kernel, _ in groups[0])
+    if any(sorted(kernel for _, kernel, _ in group) != first for group in groups):
+        raise ValueError('a launch does not dispatch the same candidate kernels as the first')
+    timed = [sum(ns for _, _, ns in group) / 1e3 for group in groups[WARMUP:]]
     timed.sort()
     return dict(kernels_per_launch=per_launch, launches=len(timed),
                 median_us=round(timed[len(timed) // 2], 3), min_us=round(timed[0], 3),
@@ -62,7 +66,6 @@ def summarize(rows, names, launches):
 def run(emission):
     """Inside the admitted container: launch the primary case the timed number of times."""
     import torch
-    from development_device import input_tensor
     sys.path.insert(0, str(R / '.deps/cake-ir/src'))
     record = json.loads((R / emission).read_text())
     spec = importlib.util.spec_from_file_location('own_generated', R / record['source'])
