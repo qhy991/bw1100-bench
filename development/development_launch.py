@@ -34,7 +34,7 @@ def run_author(root, binding, deadline, environment, instruction, entry):
         raise TimeoutError('CPU preparation consumed the search interval')
     # hmz 0.2.1: budgets are flow parameters; the agent slot is named by the flow.
     command = ['/usr/bin/timeout', '--signal=TERM', '--kill-after=15s', str(remaining) + 's',
-        str(entry), 'exec', '-f', 'campaign/ralph_flow.py', '-a', 'agent=' + binding['model'],
+        str(entry), 'exec', '-f', './campaign/ralph_flow.py', '-a', 'agent=' + binding['model'],
         '-p', f'budget.duration={remaining},budget.graceful=false',
         instruction + '\n' + (root / 'campaign/TASK.md').read_text()]
     checked = None

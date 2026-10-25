@@ -289,6 +289,18 @@ class DevelopmentAuthorPermissionTests(unittest.TestCase):
         self.assertTrue(fenced(permission, workdir='/run', home='/home', profile=None, environ={}).open)
         self.assertIs(module['Agents'].__annotations__['agent'], module['Author'])
 
+    def test_the_launch_names_the_flow_as_a_path(self):
+        """r2: hmz 0.2.1 read `campaign/ralph_flow.py` as a flowverse name and exited 2 in all 9 Runs."""
+        try:
+            from hmz.runtime.flowing.verses import pathed
+        except ImportError:
+            self.skipTest('hmz 0.2.1 is not installed beside this Python')
+        import re
+        source = (ROOT / 'development/development_launch.py').read_text()
+        flows = re.findall(r"'exec', '-f', '([^']+)'", source)
+        self.assertEqual(flows, ['./campaign/ralph_flow.py'])
+        self.assertTrue(all(pathed(flow) for flow in flows))
+
 
 if __name__ == '__main__':
     unittest.main()
