@@ -28,15 +28,34 @@ def validate_nominee(root, binding, best, environment, stop):
         raise ValueError('source-bound nominee validation failed: ' + result.stderr[-1000:])
 
 
+def exec_arguments(binding, remaining, task):
+    # hmz 0.2.1: the flow is a ./ path, budgets are flow parameters, and the agent slot is
+    # named by the flow. No backup: a settings default would hold a cut-off run past the
+    # SIGTERM grace and turn a normal cutoff into a SIGKILL that halts the HCU.
+    return ['exec', '-f', './campaign/ralph_flow.py', '-a', 'agent=' + binding['model'],
+            '-p', f'budget.duration={remaining},budget.graceful=false', '--backup', 'none', task]
+
+
+def check_exec_line(root, binding, entry, environment):
+    """Read the real exec line and load the flow with hmz's own Runner; no model is called."""
+    probe = ('from hmz.runtime.runner import Runner, read_line\n'
+             'import sys\n'
+             'line = read_line(sys.argv[1:])\n'
+             'Runner(line.flow, agents=line.agents, envs=line.envs, params=line.params,\n'
+             '       budget=line.budget, backup=line.backup)\n')
+    python = Path(entry).parent / 'python'
+    result = subprocess.run([str(python), '-c', probe, *exec_arguments(binding, 60, 'check')[1:]],
+                            cwd=root, env=environment, capture_output=True, text=True, timeout=120)
+    if result.returncode:
+        raise RuntimeError('hmz refuses the author exec line: ' + (result.stderr or result.stdout)[-1500:])
+
+
 def run_author(root, binding, deadline, environment, instruction, entry):
     remaining = int(deadline['search_stop_at_epoch'] - time.time())
     if remaining <= 0:
         raise TimeoutError('CPU preparation consumed the search interval')
-    # hmz 0.2.1: budgets are flow parameters; the agent slot is named by the flow.
-    command = ['/usr/bin/timeout', '--signal=TERM', '--kill-after=15s', str(remaining) + 's',
-        str(entry), 'exec', '-f', './campaign/ralph_flow.py', '-a', 'agent=' + binding['model'],
-        '-p', f'budget.duration={remaining},budget.graceful=false',
-        instruction + '\n' + (root / 'campaign/TASK.md').read_text()]
+    command = ['/usr/bin/timeout', '--signal=TERM', '--kill-after=15s', str(remaining) + 's', str(entry),
+        *exec_arguments(binding, remaining, instruction + '\n' + (root / 'campaign/TASK.md').read_text())]
     checked = None
     approved = None
     with (root / 'campaign/logs/ralph.log').open('x') as log:
@@ -116,6 +135,7 @@ def main(root=R, check=False):
     binding = reconcile(root)
     entry, environment = author_entry(binding, flow_version='0.2')
     catalog(root)
+    check_exec_line(root, binding, entry, environment)
     if check:
         print('Prepared development contract and absolute author entry are available')
         return 0
