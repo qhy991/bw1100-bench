@@ -95,8 +95,8 @@ generated-source/ISA observation), supported_transforms (what you tried and why 
 not express the mechanism), native (the hip_probe id and its outcome, or the specific
 skip reason), measured_effect (the kernel_time and callable deltas you observed, or
 "none"), proposed_owner (candidate, Verifier, cost model, IR vocabulary, lowering,
-toolchain, host or Workload) and evidence (own campaign/ paths). Write `[]`-free lines
-only for real limitations; a task that met none appends nothing. Candidate misuse,
+toolchain, host or Workload) and evidence (own campaign/ paths). A task that met no
+real limitation appends nothing. Candidate misuse,
 resource waits and noise are not limitations. Separate candidate errors,
 Verifier coverage, cost-model uncertainty, IR vocabulary, lowering, toolchain, host overhead
 and resource waiting. The owner replays one fixed accepted nominee inside the budget.
