@@ -289,6 +289,40 @@ class DevelopmentAuthorPermissionTests(unittest.TestCase):
         self.assertTrue(fenced(permission, workdir='/run', home='/home', profile=None, environ={}).open)
         self.assertIs(module['Agents'].__annotations__['agent'], module['Author'])
 
+    def test_hmz_accepts_the_exact_author_exec_line(self):
+        """r2: hmz 0.2.1 read `campaign/ralph_flow.py` as a flowverse name and exited 2 in all 9 Runs.
+
+        The same check runs in development_launch --check, which bench_queue calls before a Run starts.
+        """
+        try:
+            from hmz.runtime.runner import read_line
+        except ImportError:
+            self.skipTest('hmz 0.2.1 is not installed beside this Python')
+        sys.path.insert(0, str(ROOT / 'development'))
+        try:
+            import development_launch
+        finally:
+            sys.path.remove(str(ROOT / 'development'))
+        arguments = development_launch.exec_arguments({'model': 'claude/glm-5.3:high'}, 600, 'task')
+        line = read_line(arguments[1:])
+        self.assertEqual(line.flow, './campaign/ralph_flow.py')
+        self.assertEqual(line.backup, ())
+        self.assertEqual(line.budget.duration.total_seconds(), 600)
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory)
+            (run / 'campaign').mkdir()
+            for name in ('ralph_flow.py', 'development_stop.py'):
+                shutil.copyfile(ROOT / 'development' / name, run / 'campaign' / name)
+            shutil.copytree(ROOT / 'campaign', run / 'campaign', dirs_exist_ok=True,
+                            ignore=shutil.ignore_patterns('ralph_flow.py'))
+            environment = dict(os.environ, HOME=directory)
+            development_launch.check_exec_line(run, {'model': 'claude/glm-5.3:high'},
+                                               Path(sys.executable).parent / 'hmz', environment)
+            arguments[2] = 'campaign/ralph_flow.py'
+            development_launch.exec_arguments = lambda *a: arguments
+            with self.assertRaisesRegex(RuntimeError, 'hmz refuses the author exec line(.|\n)*a path starts with'):
+                development_launch.check_exec_line(run, {'model': 'claude/glm-5.3:high'},
+                                                   Path(sys.executable).parent / 'hmz', environment)
 
 if __name__ == '__main__':
     unittest.main()
