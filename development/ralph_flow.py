@@ -36,7 +36,7 @@ class Params(FlowParams):
     max_rounds: int | None = None
 
 
-def await_close_decision(root, binding, deadline, text):
+async def await_close_decision(root, binding, deadline, text):
     """Hold further turns while the owner validates a search-close request."""
     ready = root / 'campaign/author-round-terminal.json'
     temporary = ready.with_suffix('.json.tmp')
@@ -51,7 +51,7 @@ def await_close_decision(root, binding, deadline, text):
             decision = {}
         if decision.get('request') == text and decision.get('decision') in ('approved', 'refused'):
             return decision['decision']
-        time.sleep(1)
+        await asyncio.sleep(1)
     return 'expired'
 
 
@@ -94,7 +94,7 @@ async def run(task: str, *, agents: Agents, envs: Envs, params: Params, ctx: Flo
             return
         request = root / 'campaign/SEARCH_CLOSE.json'
         if request.exists():
-            if await_close_decision(root, binding, deadline, request.read_text()) != 'refused':
+            if await await_close_decision(root, binding, deadline, request.read_text()) != 'refused':
                 return
         if params.max_rounds is not None and rounds_this_call >= params.max_rounds:
             return

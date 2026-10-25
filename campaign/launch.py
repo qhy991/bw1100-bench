@@ -34,7 +34,7 @@ def author(command, env, timeout, log):
         return 124
 
 
-def author_entry(binding):
+def author_entry(binding, flow_version=None):
     # Keep the venv path: resolving a symlinked Python would lose its sibling CLI.
     bin_directory = Path(sys.executable).absolute().parent
     entry = bin_directory / 'hmz'
@@ -51,6 +51,12 @@ def author_entry(binding):
         env.pop(key, None)
     subprocess.run([str(entry), '--help'], env=env, check=True, timeout=30,
                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if flow_version is not None:
+        # The Development flow and the Bench flow target different hmz flow APIs.
+        reported = subprocess.run([str(entry), '--version'], env=env, check=True, timeout=30,
+                                  capture_output=True, text=True).stdout.strip()
+        if not reported.startswith('hmz ' + flow_version + '.'):
+            raise RuntimeError(f'Author executable reports {reported!r}; this flow needs hmz {flow_version}')
     return entry, env
 
 

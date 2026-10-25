@@ -114,7 +114,7 @@ def write_terminal(root, binding, model_exit, best, confirmation, failure, closu
 def main(root=R, check=False):
     os.chdir(root)
     binding = reconcile(root)
-    entry, environment = author_entry(binding)
+    entry, environment = author_entry(binding, flow_version='0.2')
     catalog(root)
     if check:
         print('Prepared development contract and absolute author entry are available')
