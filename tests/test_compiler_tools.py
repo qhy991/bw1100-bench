@@ -246,7 +246,8 @@ for name in ('Agent','AgentCollection','EnvCollection','FlowContext','FlowParams
 flows.HarnessError=HarnessError
 flows.HarnessNotInstalled=type('HarnessNotInstalled',(HarnessError,),{})
 flows.HarnessSandboxed=type('HarnessSandboxed',(HarnessError,),{})
-flows.Allowance=lambda **kw:None; flows.flow=lambda **kw:lambda f:f
+flows.Allowance=flows.Permission=lambda **kw:None; flows.flow=lambda **kw:lambda f:f
+flows.PermissionKind=types.SimpleNamespace(ALL='all',READ='read',NONE='none')
 sys.modules['hmz']=package;sys.modules['hmz.flows']=flows
 time.sleep=lambda seconds:None
 module=runpy.run_path('campaign/ralph_flow.py'); calls=[]
