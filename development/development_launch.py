@@ -32,9 +32,11 @@ def run_author(root, binding, deadline, environment, instruction, entry):
     remaining = int(deadline['search_stop_at_epoch'] - time.time())
     if remaining <= 0:
         raise TimeoutError('CPU preparation consumed the search interval')
+    # hmz 0.2.1: budgets are flow parameters; the agent slot is named by the flow.
     command = ['/usr/bin/timeout', '--signal=TERM', '--kill-after=15s', str(remaining) + 's',
-        str(entry), 'exec', '-f', 'campaign/ralph_flow.py', '-a', binding['model'],
-        '-c', 'campaign/budget-3h.yaml', instruction + '\n' + (root / 'campaign/TASK.md').read_text()]
+        str(entry), 'exec', '-f', 'campaign/ralph_flow.py', '-a', 'agent=' + binding['model'],
+        '-p', f'budget.duration={remaining},budget.graceful=false',
+        instruction + '\n' + (root / 'campaign/TASK.md').read_text()]
     checked = None
     approved = None
     with (root / 'campaign/logs/ralph.log').open('x') as log:
@@ -112,7 +114,7 @@ def write_terminal(root, binding, model_exit, best, confirmation, failure, closu
 def main(root=R, check=False):
     os.chdir(root)
     binding = reconcile(root)
-    entry, environment = author_entry(binding)
+    entry, environment = author_entry(binding, flow_version='0.2')
     catalog(root)
     if check:
         print('Prepared development contract and absolute author entry are available')

@@ -90,6 +90,25 @@ except (RuntimeError,OSError,launch.subprocess.SubprocessError) as error:
                 self.assertFalse((self.run / 'campaign/deadline.json').exists())
                 self.assertFalse((self.run / 'campaign/intake.json').exists())
 
+    def test_a_flow_that_needs_another_hmz_api_is_refused_before_budget(self):
+        for reported, refused in (('hmz 0.1.0', True), ('hmz 0.2.1', False), ('hmz 0.20.0', True)):
+            with self.subTest(reported=reported):
+                self.entry.write_text('#!/bin/sh\n[ "$1" = --version ] && echo "%s"\nexit 0\n' % reported)
+                self.entry.chmod(0o755)
+                result = self.process('''
+import json,sys
+sys.path.insert(0,sys.argv[1])
+from campaign import launch
+try:
+    launch.author_entry({'home':sys.argv[3],'hcu':1}, flow_version='0.2')
+    print(json.dumps({'refused':False}))
+except RuntimeError as error:
+    print(json.dumps({'refused':True,'message':str(error)}))
+''')
+                self.assertEqual(result['refused'], refused)
+                if refused:
+                    self.assertIn(reported, result['message'])
+
 
 if __name__ == '__main__':
     unittest.main()

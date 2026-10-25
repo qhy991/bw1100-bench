@@ -24,7 +24,9 @@ prompt (and any repeated round prompt):
 ```bash
 export HOME=/data3/testuser01
 profile_instruction=$(python3 scripts/ralph_profile_intake.py campaign/profile-intake.json)
-hmz exec -f "$flow_path" -a claude/glm-5.3:high -c campaign/budget-3h.yaml \
+# Development Runs (hmz 0.2.1): the budget is a flow parameter, the agent slot is named.
+hmz exec -f "$flow_path" -a agent=claude/glm-5.3:high \
+  -p budget.duration=$remaining,budget.graceful=false \
   "$profile_instruction"$'\n\n'"$(cat campaign/TASK.md)"
 ```
 
