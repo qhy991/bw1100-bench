@@ -158,7 +158,7 @@ class StreamReleaseTests(unittest.TestCase):
             write(root / 'campaign/evaluations/nominee/outcome.json', dict(id='nominee', status='accepted',
                   phase='search', compiler='compiler', primary_us=[1.0], candidate='campaign/candidates/a.py'))
             def confirm(*args, **kwargs):
-                write(root / 'campaign/evaluations/final-confirmation/outcome.json', {'status': 'accepted'})
+                write(root / 'campaign/evaluations/final-confirmation/outcome.json', {'status': 'accepted', 'phase': 'confirmation'})
                 return 0
             previous = Path.cwd()
             try:
