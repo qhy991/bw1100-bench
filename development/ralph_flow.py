@@ -15,6 +15,8 @@ from hmz.flows import (
     HarnessNotInstalled,
     HarnessSandboxed,
     LocalEnv,
+    Permission,
+    PermissionKind,
     flow,
 )
 
@@ -24,8 +26,15 @@ from development_stop import stopped
 from campaign.compiler_tools import author_context
 
 
+class Author(Agent):
+    # bw1100's 4.19 kernel has no Landlock, so 0.2.1 refuses its default fence outright.
+    # 0.1.0 fenced no local agent; isolation stays as it was: the Run root, the HCU
+    # gateway, and Docker around device and evaluation commands.
+    _permission = Permission(user=PermissionKind.ALL, system=PermissionKind.ALL)
+
+
 class Agents(AgentCollection):
-    agent: Agent
+    agent: Author
 
 
 class Envs(EnvCollection):

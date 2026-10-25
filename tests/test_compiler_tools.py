@@ -246,7 +246,8 @@ for name in ('Agent','AgentCollection','EnvCollection','FlowContext','FlowParams
 flows.HarnessError=HarnessError
 flows.HarnessNotInstalled=type('HarnessNotInstalled',(HarnessError,),{})
 flows.HarnessSandboxed=type('HarnessSandboxed',(HarnessError,),{})
-flows.Allowance=lambda **kw:None; flows.flow=lambda **kw:lambda f:f
+flows.Allowance=flows.Permission=lambda **kw:None; flows.flow=lambda **kw:lambda f:f
+flows.PermissionKind=types.SimpleNamespace(ALL='all',READ='read',NONE='none')
 sys.modules['hmz']=package;sys.modules['hmz.flows']=flows
 time.sleep=lambda seconds:None
 module=runpy.run_path('campaign/ralph_flow.py'); calls=[]
@@ -272,6 +273,21 @@ print(json.dumps(calls))
                 self.assertIn('Own transform observations', observed[0])
                 self.assertIn('Own native HIP explorations', observed[0])
                 self.assertIn('retained native build failure', observed[0])
+
+
+class DevelopmentAuthorPermissionTests(unittest.TestCase):
+    def test_the_author_role_is_granted_an_open_fence(self):
+        """bw1100 has no Landlock; a fenced Claude author is refused before its first turn."""
+        try:
+            from hmz.runtime.flowing import declaring
+            from hmz.runtime.flowing.harnessing import fenced
+        except ImportError:
+            self.skipTest('hmz 0.2.1 is not installed beside this Python')
+        import runpy
+        module = runpy.run_path(str(ROOT / 'development/ralph_flow.py'), run_name='ralph_flow')
+        permission = module['Author']._permission
+        self.assertTrue(fenced(permission, workdir='/run', home='/home', profile=None, environ={}).open)
+        self.assertIs(module['Agents'].__annotations__['agent'], module['Author'])
 
 
 if __name__ == '__main__':
