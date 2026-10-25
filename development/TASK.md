@@ -86,7 +86,18 @@ BWBENCH_LATEST_START_EPOCH=search_stop_at_epoch-630. scripts/rocprof.sh takes no
 argument; it reads the pinned image from campaign/development-binding.json.
 
 Keep concise hypothesis/evidence/next-step notes in JOURNAL.md. Record owning-layer leads
-and counterexamples in JOURNAL/EVOLUTION.md and HANDOFF.md. Separate candidate errors,
+and counterexamples in JOURNAL/EVOLUTION.md and HANDOFF.md.
+
+Every task is also a Compiler study. Before the search cutoff, append one line per distinct
+Cake limitation you actually met to campaign/gaps.jsonl (JSON object per line, create the
+file if absent): hypothesis, operation, limitation (the exact diagnostic, refusal code or
+generated-source/ISA observation), supported_transforms (what you tried and why it could
+not express the mechanism), native (the hip_probe id and its outcome, or the specific
+skip reason), measured_effect (the kernel_time and callable deltas you observed, or
+"none"), proposed_owner (candidate, Verifier, cost model, IR vocabulary, lowering,
+toolchain, host or Workload) and evidence (own campaign/ paths). Write `[]`-free lines
+only for real limitations; a task that met none appends nothing. Candidate misuse,
+resource waits and noise are not limitations. Separate candidate errors,
 Verifier coverage, cost-model uncertainty, IR vocabulary, lowering, toolchain, host overhead
 and resource waiting. The owner replays one fixed accepted nominee inside the budget.
 

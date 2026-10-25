@@ -166,6 +166,8 @@ def main(root=R, check=False):
                 code = subprocess.call(command, cwd=root, stdout=log, stderr=subprocess.STDOUT, env=environment)
             path = root / 'campaign/evaluations/final-confirmation/outcome.json'
             confirmation = json.loads(path.read_text()) if path.exists() else dict(status='missing', exit_code=code)
+            if confirmation.get('phase') not in (None, 'confirmation'):
+                confirmation = dict(status='confirmation_identity_mismatch', observed_phase=confirmation.get('phase'))
     except Exception as error:
         if isinstance(error, (OSError, subprocess.SubprocessError)):
             halt(binding, 'controller service or observer failed: ' + type(error).__name__, phase)

@@ -2,6 +2,7 @@ from pathlib import Path
 import argparse,json,subprocess,os,time
 from development_stop import stopped, halt, device_failure_is_infrastructure
 R=Path(__file__).resolve().parents[1];os.chdir(R);p=argparse.ArgumentParser();p.add_argument('--candidate',required=True);p.add_argument('--id',required=True);p.add_argument('--phase',choices=['search','confirmation'],default='search');a=p.parse_args();b=json.loads((R/'campaign/development-binding.json').read_text());d=json.loads((R/'campaign/deadline.json').read_text());folder=R/'campaign/evaluations'/a.id
+if a.phase=='search' and a.id=='final-confirmation':raise SystemExit('final-confirmation is the owner confirmation id; choose another id')
 if stopped(b):raise SystemExit('batch STOP: no new evaluations')
 os.environ['BWBENCH_STOP_FILE']=b['batch_stop_file']
 if a.phase=='search' and (R/'campaign/SEARCH_CLOSE.json').exists():raise SystemExit('search-close request pending; no new device work')
