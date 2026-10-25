@@ -35,9 +35,27 @@ class ReservedConfirmationId(unittest.TestCase):
         self.assertIn('owner confirmation id', str(stop.exception.code))
         self.assertEqual(calls, [])
 
-    def test_the_launcher_checks_that_a_confirmation_has_the_confirmation_phase(self):
+    def test_a_confirmation_folder_the_owner_did_not_create_is_never_read_as_one(self):
         source = (ROOT / 'development/development_launch.py').read_text()
-        self.assertIn("confirmation.get('phase') not in (None, 'confirmation')", source)
+        block = source[source.index("folder = root / 'campaign/evaluations/final-confirmation'"):]
+        block = block[:block.index('except Exception as error:')]
+        self.assertLess(block.index('if folder.exists() or folder.is_symlink():'), block.index('subprocess.call(command'))
+        self.assertIn("confirmation.get('phase') != 'confirmation'", block)
+
+    def test_a_mismatched_confirmation_terminal_is_no_qualified_result(self):
+        sys.path.insert(0, str(ROOT / 'development')); self.addCleanup(sys.path.remove, str(ROOT / 'development'))
+        import development_launch
+        temp = Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, temp)
+        (temp / 'campaign').mkdir()
+        binding = dict(task='t', compiler='c', gateway={})
+        old = development_launch.released
+        development_launch.released = lambda root: True
+        try:
+            development_launch.write_terminal(temp, binding, 0, {'id': 'x'},
+                {'status': 'confirmation_identity_mismatch'}, None, None)
+        finally:
+            development_launch.released = old
+        self.assertEqual(json.loads((temp / 'campaign/DONE.json').read_text())['status'], 'no_qualified_result')
 
 
 if __name__ == '__main__':

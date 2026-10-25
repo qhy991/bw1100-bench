@@ -159,15 +159,21 @@ def main(root=R, check=False):
             seconds = int(deadline['stop_at_epoch'] - time.time()) - 20
             if seconds <= 0:
                 raise TimeoutError('confirmation budget exhausted')
-            command = ['/usr/bin/timeout', '--signal=TERM', '--kill-after=15s', str(seconds) + 's',
-                'python3', 'campaign/development_evaluate_owner.py', '--candidate', best['candidate'],
-                '--id', 'final-confirmation', '--phase', 'confirmation']
-            with (root / 'campaign/logs/confirmation-owner.log').open('x') as log:
-                code = subprocess.call(command, cwd=root, stdout=log, stderr=subprocess.STDOUT, env=environment)
-            path = root / 'campaign/evaluations/final-confirmation/outcome.json'
-            confirmation = json.loads(path.read_text()) if path.exists() else dict(status='missing', exit_code=code)
-            if confirmation.get('phase') not in (None, 'confirmation'):
-                confirmation = dict(status='confirmation_identity_mismatch', observed_phase=confirmation.get('phase'))
+            folder = root / 'campaign/evaluations/final-confirmation'
+            if folder.exists() or folder.is_symlink():
+                # Only this call may create it; anything already there was written by someone else.
+                confirmation = dict(status='confirmation_identity_mismatch',
+                                    reason='final-confirmation existed before the owner confirmation')
+            else:
+                command = ['/usr/bin/timeout', '--signal=TERM', '--kill-after=15s', str(seconds) + 's',
+                    'python3', 'campaign/development_evaluate_owner.py', '--candidate', best['candidate'],
+                    '--id', 'final-confirmation', '--phase', 'confirmation']
+                with (root / 'campaign/logs/confirmation-owner.log').open('x') as log:
+                    code = subprocess.call(command, cwd=root, stdout=log, stderr=subprocess.STDOUT, env=environment)
+                path = folder / 'outcome.json'
+                confirmation = json.loads(path.read_text()) if path.exists() else dict(status='missing', exit_code=code)
+                if confirmation.get('phase') != 'confirmation' and confirmation.get('status') != 'missing':
+                    confirmation = dict(status='confirmation_identity_mismatch', observed_phase=confirmation.get('phase'))
     except Exception as error:
         if isinstance(error, (OSError, subprocess.SubprocessError)):
             halt(binding, 'controller service or observer failed: ' + type(error).__name__, phase)

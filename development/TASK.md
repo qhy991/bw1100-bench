@@ -94,7 +94,7 @@ file if absent): hypothesis, operation, limitation (the exact diagnostic, refusa
 generated-source/ISA observation), supported_transforms (what you tried and why it could
 not express the mechanism), native (the hip_probe id and its outcome, or the specific
 skip reason), measured_effect (the kernel_time and callable deltas you observed, or
-"none"), proposed_owner (candidate, Verifier, cost model, IR vocabulary, lowering,
+"none"), proposed_owner (Verifier, cost model, IR vocabulary, lowering,
 toolchain, host or Workload) and evidence (own campaign/ paths). A task that met no
 real limitation appends nothing. Candidate misuse,
 resource waits and noise are not limitations. Separate candidate errors,
