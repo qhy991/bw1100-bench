@@ -234,16 +234,35 @@ else:
                     (self.root / 'campaign/evaluations').mkdir(); (self.root / 'campaign/management').mkdir()
                 self.write('campaign/deadline.json', dict(source_commit=self.prepared, search_stop_at_epoch=time.time()+60))
                 observed = json.loads(self.process('''
-import json,runpy,sys,time,types
+import asyncio,json,runpy,sys,time,types
 from pathlib import Path
 package=types.ModuleType('hmz'); flows=types.ModuleType('hmz.flows')
-flows.Agent=object; flows.Allowance=lambda **kw:None; flows.flow=lambda **kw:lambda f:f
+class Base:
+    pass
+class HarnessError(Exception):
+    pass
+for name in ('Agent','AgentCollection','EnvCollection','FlowContext','FlowParams','LocalEnv'):
+    setattr(flows,name,type(name,(Base,),{}))
+flows.HarnessError=HarnessError
+flows.HarnessNotInstalled=type('HarnessNotInstalled',(HarnessError,),{})
+flows.HarnessSandboxed=type('HarnessSandboxed',(HarnessError,),{})
+flows.Allowance=lambda **kw:None; flows.flow=lambda **kw:lambda f:f
 sys.modules['hmz']=package;sys.modules['hmz.flows']=flows
 time.sleep=lambda seconds:None
 module=runpy.run_path('campaign/ralph_flow.py'); calls=[]
 def author(prompt,**kw):
     calls.append(prompt);path=Path('campaign/deadline.json');d=json.loads(path.read_text());d['search_stop_at_epoch']=0;path.write_text(json.dumps(d))
-module['run']((author,), 'Frozen task')
+    return 'turn complete'
+class Agent:
+    async def spawn(self):
+        return object()
+    async def run(self,prompt,**kw):
+        return author(prompt)
+if asyncio.iscoroutinefunction(module['run']):
+    asyncio.run(module['run']('Frozen task',agents={'agent':Agent()},envs={'workspace':object()},
+        params=types.SimpleNamespace(max_rounds=None),ctx=types.SimpleNamespace(state={})))
+else:
+    module['run']((author,), 'Frozen task')
 print(json.dumps(calls))
 '''))
                 self.assertEqual(len(observed), 1)

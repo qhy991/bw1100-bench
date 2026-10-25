@@ -41,6 +41,10 @@ def author_entry(binding):
     if not entry.is_file() or not os.access(entry, os.X_OK):
         raise RuntimeError('Author executable is unavailable beside the owner Python: ' + str(entry))
     env = dict(os.environ, HOME=binding['home'], HIP_VISIBLE_DEVICES=str(binding['hcu']))
+    # A full evaluation outlasts Claude Code's two-minute Bash default, and a high-effort
+    # reply exceeded its 32000-token cap on C500 (r1b); both ended authors early there.
+    env['BASH_DEFAULT_TIMEOUT_MS'] = env['BASH_MAX_TIMEOUT_MS'] = str(1800 * 1000)
+    env['CLAUDE_CODE_MAX_OUTPUT_TOKENS'] = '64000'
     env['PATH'] = os.pathsep.join((str(bin_directory), str(Path(binding['home']) / '.local/bin'),
                                  env.get('PATH', '')))
     for key in ('http_proxy', 'https_proxy', 'all_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY'):
