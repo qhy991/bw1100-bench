@@ -77,7 +77,7 @@ nor isolate one changed parameter as the sole cause of the older divergence.
 
 ```bash
 HIP_VISIBLE_DEVICES=2 BWBENCH_TIMEOUT=1800 bash scripts/dtk.sh gpu IMAGE \
-  results/UNIQUE-admission.json \
+  .local/UNIQUE/admission.json \
   env TRITON_F32_DEFAULT=ieee FLA_TRIL_PRECISION=ieee \
       TRITON_CACHE_DIR=/work/.local/triton-ieee \
   python3 bwbench.py check \
@@ -86,7 +86,9 @@ HIP_VISIBLE_DEVICES=2 BWBENCH_TIMEOUT=1800 bash scripts/dtk.sh gpu IMAGE \
   --workloads all --rounds 10 --output results/UNIQUE-check.json
 ```
 
-Substitute the pinned installed image and fresh receipt/output paths. Keep
+Substitute the pinned installed image and fresh receipt/output paths. The
+2026-10-02 receipts were written under `results/`; the gateway now refuses a
+receipt outside `campaign/` or `.local/` ([DTK admission](DTK-ADMISSION.md)). Keep
 IEEE flags and persistent cache identical for profiling and any paired timing.
 The image, source hashes and canonical qualification rows belong to the
 baseline inventory; raw data/results stay outside Git.

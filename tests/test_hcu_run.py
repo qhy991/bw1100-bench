@@ -1,6 +1,7 @@
 """Focused safety checks for the standalone HCU admission boundary."""
 
 import importlib.util
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -21,16 +22,67 @@ class HcuRunTests(unittest.TestCase):
             with mock.patch.object(hcu_run, 'ROOT', Path(temporary)):
                 with self.assertRaises(ValueError):
                     hcu_run._receipt_paths('../elsewhere.json')
-                path, _ = hcu_run._receipt_paths('results/job.json')
+                path, _ = hcu_run._receipt_paths('campaign/results/job.json')
                 path.write_text('{}')
                 with self.assertRaises(FileExistsError):
-                    hcu_run._receipt_paths('results/job.json')
+                    hcu_run._receipt_paths('campaign/results/job.json')
+
+    def test_receipt_outside_the_release_walks_is_refused(self):
+        """#44: a receipt neither release check reads would certify a killed gateway released."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            (root / 'campaign/real').mkdir(parents=True)
+            (root / '.data').mkdir()
+            (root / 'campaign/to-data').symlink_to(root / '.data')
+            (root / '.local/profile').mkdir(parents=True)
+            (root / '.local/profile/to-cache').symlink_to(root / 'campaign/__pycache__')
+            (root / 'campaign/to-real').symlink_to(root / 'campaign/real')
+            with mock.patch.object(hcu_run, 'ROOT', root):
+                for name in ('.data/r/admission.json', 'native/admission.json',
+                             'results/rmsnorm-admission.json', 'admission.json', 'campaign', '.',
+                             'campaign/__pycache__/admission.json', '.local/triton-cache/a.json',
+                             '.local/aiter-jit-cache/x/a.json', 'campaign/.deps/a.json',
+                             'campaign/.data/a.json', '.local/.git/a.json',
+                             'campaign/admission.txt', 'campaign/to-data/admission.json',
+                             '.local/profile/to-cache/admission.json'):
+                    with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'release checks'):
+                        hcu_run._receipt_paths(name)
+                for name, resolved in (('campaign/evaluations/e1/correctness-admission.json', None),
+                                       ('.local/profile/RUN/admission.json', None),
+                                       ('campaign/to-real/admission.json', 'campaign/real/admission.json')):
+                    with self.subTest(name=name):
+                        path, terminal = hcu_run._receipt_paths(name)
+                        self.assertEqual(path, root / (resolved or name))
+                        self.assertEqual(terminal, path.with_name(path.stem + '-terminal.json'))
+            self.assertFalse((root / 'campaign/__pycache__').exists())
+            self.assertFalse((root / 'native').exists() or (root / 'results').exists())
+
+    def test_out_of_scope_receipt_is_a_caller_error_before_any_admission(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            stop = root / 'STOP.json'
+            argv = ['hcu_run.py', '--image', 'pinned-image', '--device', '0',
+                    '--receipt', 'results/job.json', '--', 'python3', 'work.py']
+            with mock.patch.object(hcu_run, 'ROOT', root), \
+                 mock.patch.object(hcu_run, 'LOCK_DIR', root / '.locks'), \
+                 mock.patch.dict(hcu_run.os.environ, {'BWBENCH_STOP_FILE': str(stop)}), \
+                 mock.patch.object(sys, 'argv', argv), \
+                 mock.patch.object(hcu_run.sys, 'stderr', new_callable=io.StringIO) as stderr, \
+                 mock.patch.object(hcu_run.subprocess, 'check_output') as output, \
+                 mock.patch.object(hcu_run.subprocess, 'run') as run:
+                with self.assertRaises(SystemExit) as refused:
+                    hcu_run.main()
+                output.assert_not_called()
+                run.assert_not_called()
+            self.assertEqual(refused.exception.code, 2)
+            self.assertIn('under campaign/ or .local/', stderr.getvalue())
+            self.assertEqual(sorted(path.name for path in root.iterdir()), [])
 
     def test_busy_hcu_never_starts_container(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             argv = ['hcu_run.py', '--image', 'pinned-image', '--device', '0',
-                    '--receipt', 'results/job.json', '--', 'python3', 'work.py']
+                    '--receipt', 'campaign/results/job.json', '--', 'python3', 'work.py']
 
             def output(command, **_):
                 if command[:3] == ['docker', 'image', 'inspect']:
@@ -49,13 +101,13 @@ class HcuRunTests(unittest.TestCase):
                 run.assert_called_once_with(['fuser', '/dev/kfd'],
                                             stdout=subprocess.DEVNULL,
                                             stderr=subprocess.DEVNULL, timeout=10)
-            self.assertFalse((root / 'results/job.json').exists())
+            self.assertFalse((root / 'campaign/results/job.json').exists())
 
     def test_zero_exit_with_busy_post_state_is_not_qualified(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             argv = ['hcu_run.py', '--image', 'pinned-image', '--device', '0',
-                    '--receipt', 'results/job.json', '--timeout', '20', '--', 'python3', 'work.py']
+                    '--receipt', 'campaign/results/job.json', '--timeout', '20', '--', 'python3', 'work.py']
             vram = iter(('0%', '97%'))
 
             def output(command, **_):
@@ -91,7 +143,7 @@ class HcuRunTests(unittest.TestCase):
                  mock.patch.object(hcu_run.time, 'sleep'), \
                  mock.patch.object(hcu_run.time, 'monotonic', side_effect=(0, 31)):
                 self.assertEqual(hcu_run.main(), 75)
-            terminal = json.loads((root / 'results/job-terminal.json').read_text())
+            terminal = json.loads((root / 'campaign/results/job-terminal.json').read_text())
             self.assertEqual(terminal['status'], 'not_qualified')
             self.assertEqual(terminal['after_vram'], '97%')
             self.assertFalse(terminal['physical_exclusivity'])
@@ -188,7 +240,7 @@ class HcuRunTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             argv = ['hcu_run.py', '--image', 'pinned-image', '--device', '3',
-                    '--receipt', 'results/job.json', '--timeout', '20', '--', 'python3', 'work.py']
+                    '--receipt', 'campaign/results/job.json', '--timeout', '20', '--', 'python3', 'work.py']
             vram = iter(('0%',) + ('3%',) * 40)
 
             def output(command, **_):
@@ -218,7 +270,7 @@ class HcuRunTests(unittest.TestCase):
                  mock.patch.object(hcu_run.time, 'sleep'), \
                  mock.patch.object(hcu_run.time, 'monotonic', side_effect=(0, 31)):
                 self.assertEqual(hcu_run.main(), 75)
-            terminal = json.loads((root / 'results/job-terminal.json').read_text())
+            terminal = json.loads((root / 'campaign/results/job-terminal.json').read_text())
             self.assertEqual(terminal['status'], 'not_qualified')
             self.assertEqual(terminal['after_vram'], '3%')
             self.assertEqual(terminal['foreign_occupancy']['holders'], [1616893])
@@ -278,7 +330,7 @@ class HcuRunTests(unittest.TestCase):
             root = Path(tmp)
             stop = root / 'STOP.json'
             argv = ['hcu_run.py', '--image', 'image', '--device', '1',
-                    '--receipt', 'results/job.json', '--', 'true']
+                    '--receipt', 'campaign/results/job.json', '--', 'true']
             with mock.patch.object(hcu_run, 'ROOT', root), \
                  mock.patch.object(hcu_run, 'LOCK_DIR', root / '.locks'), \
                  mock.patch.dict(hcu_run.os.environ, {'BWBENCH_STOP_FILE': str(stop)}), \
@@ -290,14 +342,14 @@ class HcuRunTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, 'missing PCI'):
                     hcu_run.main()
             self.assertTrue(stop.exists())
-            self.assertFalse((root / 'results/job.json').exists())
+            self.assertFalse((root / 'campaign/results/job.json').exists())
 
     def test_release_observer_denial_writes_unknown_terminal_and_stops_queue(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             stop = root / 'STOP.json'
             argv = ['hcu_run.py', '--image', 'image', '--device', '1',
-                    '--receipt', 'results/job.json', '--', 'true']
+                    '--receipt', 'campaign/results/job.json', '--', 'true']
             with mock.patch.object(hcu_run, 'ROOT', root), \
                  mock.patch.object(hcu_run, 'LOCK_DIR', root / '.locks'), \
                  mock.patch.dict(hcu_run.os.environ, {'BWBENCH_STOP_FILE': str(stop)}), \
@@ -317,7 +369,7 @@ class HcuRunTests(unittest.TestCase):
                 self.assertNotIn('DCU_CREATOR', ' '.join(command))
                 with self.assertRaisesRegex(RuntimeError, 'stopped new GPU'):
                     hcu_run.main()
-            terminal = json.loads((root / 'results/job-terminal.json').read_text())
+            terminal = json.loads((root / 'campaign/results/job-terminal.json').read_text())
             self.assertEqual(terminal['status'], 'not_qualified')
             self.assertIsNone(terminal['after_kfd_visible'])
             self.assertIsNone(terminal['container_still_running'])

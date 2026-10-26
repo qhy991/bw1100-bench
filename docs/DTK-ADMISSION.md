@@ -24,6 +24,17 @@ files without modifying the image. CPU mode also exports the host username
 for Python packages that call `getpass.getuser()` under a UID absent from the
 container's passwd file.
 
+The receipt path must resolve to a `.json` file under `campaign/` or `.local/`, and not
+below `.git`, `.deps`, `.data`, `triton-cache`, `aiter-jit-cache` or `__pycache__`.
+These are exactly the files both release checks read: `development_control.released`
+and `bench_queue.release_audit`. A receipt elsewhere would be invisible to them, so a
+gateway killed before its terminal could be certified released. Any other path, including
+a symlink that resolves outside that scope, is a caller error. It exits 2 before the lock,
+the device check or any receipt, and writes no STOP. `scripts/hcu_run.py` owns the scope as
+`RECEIPT_ROOTS` and `RECEIPT_UNWALKED_DIRS`. The release checks live in the Run adapter
+on the development branch. They read their copy in its `scripts/json_stream.py`, and a test
+there holds the two equal. A change to the scope here must change that copy too.
+
 The output path is create-only. The initial `<name>.json` records admission,
 source command, image, device and deadline; `<name>-terminal.json` records exit
 code, container presence and post-run HCU/KFD observations. `completed` is
