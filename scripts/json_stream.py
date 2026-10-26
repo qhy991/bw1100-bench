@@ -21,6 +21,11 @@ def read_json_stream(path):
 
 
 GATEWAY_SCHEMA = 'bw1100-bench.hcu-admission.v1'
+# The release checks' copy of where the gateway admits receipts (scripts/hcu_run.py
+# RECEIPT_ROOTS / RECEIPT_UNWALKED_DIRS, #44). released() walks RELEASE_ROOTS; both it and
+# release_audit skip exactly RELEASE_UNWALKED_DIRS, where the gateway refuses a receipt.
+RELEASE_ROOTS = ('campaign', '.local')
+RELEASE_UNWALKED_DIRS = frozenset(('.git', '.deps', '.data', 'triton-cache', 'aiter-jit-cache', '__pycache__'))
 _JOB_ID = re.compile(r'"job_id"\s*:\s*"([^"]+)"')
 
 

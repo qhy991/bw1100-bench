@@ -12,7 +12,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from development.development_control import released
 from scripts.bench_queue import release_audit
-from scripts.json_stream import read_json_stream
+from scripts.json_stream import RELEASE_ROOTS, RELEASE_UNWALKED_DIRS, read_json_stream
+
+_GATEWAY = importlib.util.spec_from_file_location('hcu_run', str(ROOT / 'scripts/hcu_run.py'))
+hcu_run = importlib.util.module_from_spec(_GATEWAY)
+_GATEWAY.loader.exec_module(hcu_run)
 
 
 def write(path, value):
@@ -133,8 +137,39 @@ class StreamReleaseTests(unittest.TestCase):
         write(self.root / 'campaign/admission-terminal.json', terminal(container_still_running=True))
         self.gates(False)
 
+    def test_every_directory_the_gateway_admits_is_read_by_both_release_checks(self):
+        """#44: the gateway's receipt scope and the two release walks are one notion."""
+        self.assertEqual(hcu_run.RECEIPT_ROOTS, RELEASE_ROOTS)
+        self.assertEqual(hcu_run.RECEIPT_UNWALKED_DIRS, RELEASE_UNWALKED_DIRS)
+        tops = (*RELEASE_ROOTS, *sorted(RELEASE_UNWALKED_DIRS), 'native', 'results', 'docs')
+        middles = ('', 'sub', 'evaluations/e1', *sorted(RELEASE_UNWALKED_DIRS))
+        admitted = []
+        for top in tops:
+            for middle in middles:
+                name = '/'.join(x for x in (top, middle, 'probe-admission.json') if x)
+                with tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary).resolve()
+                    (root / 'campaign').mkdir()
+                    with patch.object(hcu_run, 'ROOT', root):
+                        try:
+                            path, terminal_path = hcu_run._receipt_paths(name)
+                        except ValueError:
+                            continue
+                    admitted.append(name)
+                    with self.subTest(receipt=name):
+                        self.root = root
+                        write(path, admission())
+                        self.gates(False)  # a gateway killed before its terminal
+                        write(terminal_path, terminal())
+                        self.gates(True)
+                        write(terminal_path, terminal(after_vram='97%'))
+                        self.gates(False)
+        self.assertEqual(sorted(admitted), sorted(
+            '/'.join(x for x in (top, middle, 'probe-admission.json') if x)
+            for top in RELEASE_ROOTS for middle in ('', 'sub', 'evaluations/e1')))
+
     def test_captured_output_with_its_receipt_outside_the_walk_is_refused(self):
-        """The gateway accepts any --receipt path in the repo; .data is outside both walks."""
+        """A receipt in .data is outside both walks; the gateway now refuses to write one (#44)."""
         write(self.root / '.data/r/admission.json', admission())
         probe = self.root / '.local/profile/probe/timing.json'
         probe.parent.mkdir(parents=True, exist_ok=True)

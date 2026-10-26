@@ -6,12 +6,12 @@ import re
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.json_stream import author_diagnostic, read_json_stream
+from scripts.json_stream import RELEASE_ROOTS, RELEASE_UNWALKED_DIRS, author_diagnostic, read_json_stream
 
 
 def released(root):
-    pending = [path for top in (root / 'campaign', root / '.local') for path in top.rglob('*.json')
-               if not any(name in path.parts for name in ('triton-cache', 'aiter-jit-cache'))]
+    pending = [path for top in RELEASE_ROOTS for path in (root / top).rglob('*.json')
+               if not RELEASE_UNWALKED_DIRS.intersection(path.relative_to(root).parts)]
     seen = set()
     jobs = {}
     declared = set()

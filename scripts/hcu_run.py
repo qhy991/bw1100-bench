@@ -12,6 +12,12 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK_DIR = Path.home() / '.local/state/bw1100-bench'
+# Where a receipt may be written: the only places both release checks
+# (development_control.released and bench_queue.release_audit) read it, so a gateway
+# killed before its terminal can never be certified released (#44). The checks keep
+# their copy in scripts/json_stream.py; tests/test_json_stream_release.py holds the two equal.
+RECEIPT_ROOTS = ('campaign', '.local')
+RECEIPT_UNWALKED_DIRS = frozenset(('.git', '.deps', '.data', 'triton-cache', 'aiter-jit-cache', '__pycache__'))
 
 
 def _vram(device):
@@ -40,6 +46,14 @@ def _receipt_paths(name):
     path = (root / name).resolve()
     if os.path.commonpath((str(root), str(path))) != str(root):
         raise ValueError('receipt must stay inside the repository')
+    parts = path.relative_to(root).parts
+    if not parts or parts[0] not in RECEIPT_ROOTS or path.suffix != '.json':
+        raise ValueError('receipt must be a .json file under campaign/ or .local/, where the '
+                         'release checks read it: %s resolves to %s' % (name, '/'.join(parts)))
+    unwalked = sorted(RECEIPT_UNWALKED_DIRS.intersection(parts[:-1]))
+    if unwalked:
+        raise ValueError('receipt must not be under %s, which the release checks skip: '
+                         '%s resolves to %s' % (', '.join(unwalked), name, '/'.join(parts)))
     terminal = path.with_name(path.stem + '-terminal.json')
     if path.exists() or terminal.exists():
         raise FileExistsError('receipt path already exists')
@@ -74,7 +88,10 @@ def main():
     command = args.command[1:] if args.command and args.command[0] == '--' else args.command
     if not command or args.device < 0 or not 10 <= args.timeout <= 3600:
         parser.error('command, nonnegative HCU id and timeout 10..3600 required')
-    receipt, terminal = _receipt_paths(args.receipt)
+    try:
+        receipt, terminal = _receipt_paths(args.receipt)
+    except ValueError as error:
+        parser.error(str(error))
     LOCK_DIR.mkdir(parents=True, exist_ok=True)
     lock_path = LOCK_DIR / ('hcu-%d.lock' % args.device)
     fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o600)
