@@ -14,6 +14,8 @@ def released(root):
                if not any(name in path.parts for name in ('triton-cache', 'aiter-jit-cache'))]
     seen = set()
     jobs = {}
+    declared = set()
+    captured = {}
     while pending:
         path = pending.pop()
         if path in seen:
@@ -27,10 +29,13 @@ def released(root):
         except OSError:
             return False
         except ValueError:
-            # An author's captured output is not a gateway record (#42); anything that could
-            # be one, or could hide one, still withholds the release.
-            if path.name.endswith('-terminal.json') or not author_diagnostic(path.read_text()):
+            # An author's captured output is not a gateway record (#42). It is admitted only
+            # if every job it names is released by a terminal below; anything that could be
+            # or hide a record, or names no job, still withholds the release.
+            named = None if path.name.endswith('-terminal.json') else author_diagnostic(path)
+            if not named:
                 return False
+            captured[path.resolve()] = named
             continue
         for record in records:
             if not isinstance(record, dict):
@@ -49,6 +54,7 @@ def released(root):
                     return False
                 if not referenced.is_file():
                     return False
+                declared.add(referenced.resolve())
                 pending.append(referenced)
             if record.get('schema') != 'bw1100-bench.hcu-admission.v1':
                 continue
@@ -79,7 +85,10 @@ def released(root):
         if any(any(key not in terminal or terminal[key] != value for key, value in admission.items())
                for admission in job['admissions'] for terminal in job['terminals']):
             return False
-    return True
+    # A declared receipt is never author output, whichever order the walk met it in.
+    if any(path in declared for path in captured):
+        return False
+    return all(jobs.get(job_id, {}).get('terminals') for named in captured.values() for job_id in named)
 
 
 def nominee(root, compiler):

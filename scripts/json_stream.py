@@ -1,5 +1,6 @@
 """Read every complete top-level JSON value; never accept a partial prefix."""
 import json
+import re
 
 
 def read_json_stream(path):
@@ -20,17 +21,27 @@ def read_json_stream(path):
 
 
 GATEWAY_SCHEMA = 'bw1100-bench.hcu-admission.v1'
+_JOB_ID = re.compile(r'"job_id"\s*:\s*"([^"]+)"')
 
 
-def author_diagnostic(text):
-    """True only for unparseable text that cannot be, or hide, a gateway record.
+def author_diagnostic(path):
+    """Job ids an author's captured output names, or None when it may be a gateway record.
 
-    The gateway writes each record whole with json.dump into a new file, schema first, so a
-    record caught mid-write is a prefix that starts with '{' and, once past its first key,
-    names the schema. Text that starts with anything else and names neither the schema nor
-    an admission_receipts declaration is an author's captured output (r4b: a probe's whole
-    stdout redirected into timing.json, issue #42), not an unreleased admission.
+    The r4b case (issue #42): a probe's whole stdout, including the gateway's final
+    {"job_id", "status", "exit_code"} line, redirected into a .json file. Such text is
+    admissible only if it decodes as UTF-8, does not start like a JSON value (the gateway
+    writes each record whole, schema first, so a torn record still starts with '{'), names
+    neither the admission schema nor an admission_receipts declaration, and names at least
+    one job. The caller must still show every named job released by its own terminal; text
+    that names no job, or a job without one, withholds the release as before.
     """
+    try:
+        text = path.read_bytes().decode('utf-8')
+    except (OSError, UnicodeDecodeError):
+        return None
     stripped = text.lstrip(' \t\r\n')
-    return (bool(stripped) and stripped[0] not in '{['
-            and GATEWAY_SCHEMA not in text and 'admission_receipts' not in text)
+    if (not stripped or stripped[0] in '{[' or GATEWAY_SCHEMA in text
+            or 'admission_receipts' in text):
+        return None
+    jobs = set(_JOB_ID.findall(text))
+    return jobs or None
