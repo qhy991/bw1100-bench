@@ -75,6 +75,123 @@ class StreamReleaseTests(unittest.TestCase):
         self.path.symlink_to(target)
         self.gates(False)
 
+    def test_captured_author_stdout_is_not_an_unreleased_admission(self):
+        """#42, r4b fib_fused_add_rmsnorm_h4096: a probe's whole stdout redirected into a .json
+        file stopped HCU 5 although both gateway terminals certified the release."""
+        write(self.root / 'campaign/admission.json', admission())
+        write(self.root / 'campaign/admission-terminal.json', terminal())
+        captured = self.captured_output()
+        for name in ('.local/profile/probe/timing.json', 'campaign/logs/probe-timing.json'):
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(captured)
+        self.gates(True)
+        self.assertEqual(sorted(release_audit(self.root)['author_diagnostic_files']),
+                         ['.local/profile/probe/timing.json', 'campaign/logs/probe-timing.json'])
+
+    def test_text_that_could_be_or_hide_a_gateway_record_still_withholds_release(self):
+        write(self.root / 'campaign/admission.json', admission())
+        write(self.root / 'campaign/admission-terminal.json', terminal())
+        for content in (
+                'warning\n' + json.dumps(admission('unreleased')) + '\n{',      # names the schema
+                'warning\n{"schema": "bw1100-bench.hcu-admission.v1", "job_',    # torn after a prefix
+                '{"schema": "bw1100-bench.hc',                                   # torn gateway write
+                '{"warning": 1}\n{',                                            # starts like a record
+                'warning\n{"admission_receipts": ["campaign/x"]',                # hides a declaration
+                '', ' \n\t'):                                                  # empty
+            with self.subTest(content=content):
+                self.path.write_text(content)
+                self.gates(False)
+        self.path.write_text('{}')
+        (self.root / 'campaign/other-terminal.json').write_text('not json at all')
+        self.gates(False)
+
+    def captured_output(self, job='owned'):
+        return ('Ignoring [] DCUs as they are invalid\n'
+                '{"level":"warning","msg":"mount dir: /data3"}\n'
+                '{"runtime_device_identity": "passed"}\n'
+                '{\n "scope": "HIP-event bracketed GPU time"\n}\n'
+                + json.dumps({'job_id': job, 'status': 'completed', 'exit_code': 0}) + '\n')
+
+    def test_captured_output_counts_only_for_jobs_released_in_scope(self):
+        """Review of #43: the exemption must bind every named job to its own released terminal."""
+        write(self.root / 'campaign/admission.json', admission())
+        write(self.root / 'campaign/admission-terminal.json', terminal())
+        probe = self.root / '.local/profile/probe/timing.json'
+        probe.parent.mkdir(parents=True, exist_ok=True)
+        for job, expected in (('owned', True), ('other', False)):
+            with self.subTest(job=job):
+                probe.write_text(self.captured_output(job))
+                self.gates(expected)
+        probe.write_text(self.captured_output('owned') + self.captured_output('other'))
+        self.gates(False)
+        self.assertEqual(
+            [i for i in release_audit(self.root)['issues'] if i['reason'] == 'author_output_names_unreleased_job'],
+            [{'file': '.local/profile/probe/timing.json', 'reason': 'author_output_names_unreleased_job',
+              'job_ids': ['other']}])
+        probe.write_text(self.captured_output())
+        write(self.root / 'campaign/admission-terminal.json', terminal(container_still_running=True))
+        self.gates(False)
+
+    def test_captured_output_with_its_receipt_outside_the_walk_is_refused(self):
+        """The gateway accepts any --receipt path in the repo; .data is outside both walks."""
+        write(self.root / '.data/r/admission.json', admission())
+        probe = self.root / '.local/profile/probe/timing.json'
+        probe.parent.mkdir(parents=True, exist_ok=True)
+        probe.write_text(self.captured_output())
+        self.gates(False)
+        write(self.root / '.data/r/admission-terminal.json', terminal())
+        self.gates(False)
+
+    def test_undecodable_or_jobless_text_and_declared_receipts_are_refused_without_crashing(self):
+        write(self.root / 'campaign/admission.json', admission())
+        write(self.root / 'campaign/admission-terminal.json', terminal())
+        self.path.write_bytes(b'warning \xff\xfe\n{"job_id": "owned"}\n')
+        self.gates(False)
+        self.path.write_text('plain warning with no job\n')
+        self.gates(False)
+        self.path.write_text('[1, 2\n' + self.captured_output())
+        self.gates(False)
+        self.path.write_text('{}\n' + json.dumps({'admission_receipts': ['campaign/declared.log']}))
+        (self.root / 'campaign/declared.log').write_text(self.captured_output())
+        self.gates(False)
+        self.path.write_text(json.dumps({'admission_receipts': ['campaign/declared.json']}))
+        (self.root / 'campaign/declared.json').write_text(self.captured_output())
+        self.gates(False)
+
+    def test_each_guard_alone_withholds_an_otherwise_released_capture(self):
+        """Every case below names only the released job 'owned', so one guard alone refuses it."""
+        from scripts.json_stream import author_diagnostic
+        write(self.root / 'campaign/admission.json', admission())
+        write(self.root / 'campaign/admission-terminal.json', terminal())
+        released_line = json.dumps({'job_id': 'owned', 'status': 'completed', 'exit_code': 0})
+        cases = {
+            'names the schema': 'warning\n' + released_line + ' bw1100-bench.hcu-admission.v1\n{',
+            'names admission_receipts': 'warning\n' + released_line + ' admission_receipts\n{',
+            'names no job': 'warning only, no job record\n{',
+        }
+        for name, content in cases.items():
+            with self.subTest(case=name):
+                self.path.write_text(content)
+                self.assertIsNone(author_diagnostic(self.path))
+                self.gates(False)
+        # A -terminal.json never becomes author output, even holding only a released job line.
+        self.path.write_text('{}')
+        (self.root / 'campaign/other-terminal.json').write_text('warning\n' + released_line + '\n')
+        self.gates(False)
+        (self.root / 'campaign/other-terminal.json').unlink()
+        # A receipt reached only through admission_receipts is never author output either.
+        self.path.write_text(json.dumps({'admission_receipts': ['campaign/declared.receipt']}))
+        (self.root / 'campaign/declared.receipt').write_text('warning\n' + released_line + '\n')
+        self.assertFalse(release_audit(self.root)['release_records_clean'])
+        self.assertFalse(released(self.root))
+        # The same receipt named by an absolute path is still a declared receipt.
+        self.path.write_text(json.dumps({'admission_receipts': [str(self.root / 'campaign/declared.json')]}))
+        (self.root / 'campaign/declared.receipt').unlink()
+        (self.root / 'campaign/declared.json').write_text('warning\n' + released_line + '\n')
+        self.assertFalse(release_audit(self.root)['release_records_clean'])
+        self.assertFalse(released(self.root))
+
     def test_later_admission_and_declared_receipt_cannot_be_skipped(self):
         self.path.write_text('{"warning":"prefix"}\n' + json.dumps(admission()))
         self.gates(False)

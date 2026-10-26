@@ -2,7 +2,7 @@
 from pathlib import Path
 import argparse,collections,fcntl,json,os,subprocess,sys,time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.json_stream import read_json_stream
+from scripts.json_stream import author_diagnostic, read_json_stream
 from scripts.release_review import reviewed_logs
 from scripts.queue_handoff import UNKNOWN_EXIT, restore, validate_handoff
 ROOT = None
@@ -11,13 +11,17 @@ def read(path):return json.loads(path.read_text())
 def atomic(path,value):
  tmp=path.with_suffix('.tmp');tmp.write_text(json.dumps(value,indent=2));tmp.replace(path)
 def release_audit(root, preexisting_json=()):
- jobs={};issues=[];declared=set();seen=set();preexisting=set(preexisting_json)
+ jobs={};issues=[];author_files={};declared=set();seen=set();preexisting=set(preexisting_json)
  def consume(p):
   if str(p.relative_to(root)) in preexisting or p in seen:return
   seen.add(p)
   if p.is_symlink():issues.append({'file':str(p.relative_to(root)),'reason':'symlink_not_followed'});return
   try:records=[read(p)] if p.name.endswith('-terminal.json') else read_json_stream(p)
-  except (ValueError,OSError):issues.append({'file':str(p.relative_to(root)),'reason':'unreadable_or_partial_record'});return
+  except OSError:issues.append({'file':str(p.relative_to(root)),'reason':'unreadable_or_partial_record'});return
+  except ValueError:
+   named=None if p.name.endswith('-terminal.json') else author_diagnostic(p)
+   if named:author_files[str(p.relative_to(root))]=named;return
+   issues.append({'file':str(p.relative_to(root)),'reason':'unreadable_or_partial_record'});return
   for d in records:
    if not isinstance(d,dict):continue
    refs=d.get('admission_receipts',[])
@@ -45,13 +49,24 @@ def release_audit(root, preexisting_json=()):
   if not p.is_file():issues.append({'file':ref,'reason':'declared_receipt_missing'})
   elif str(p.relative_to(root)) in preexisting:issues.append({'file':ref,'reason':'declared_receipt_is_preexisting_source'})
   else:consume(p)
+ declared_paths=set()
+ for x in declared:
+  try:declared_paths.add((root/x).resolve())
+  except (OSError,ValueError):pass
+ released={jid for jid,row in jobs.items() if row['terminals'] and all(
+  d['container_still_running'] is False and d['after_vram']=='0%' and d['after_kfd_visible'] is False
+  for d in row['terminals'])}
+ for name,named in author_files.items():
+  if (root/name).resolve() in declared_paths:issues.append({'file':name,'reason':'declared_receipt_unreadable'});continue
+  if not named<=released:issues.append({'file':name,'reason':'author_output_names_unreleased_job',
+   'job_ids':sorted(named-released)})
  for jid,row in jobs.items():
   if not row['terminals']:issues.append({'job_id':jid,'reason':'missing_terminal'})
   elif any(d['container_still_running'] is not False or d['after_vram']!='0%' or d['after_kfd_visible'] is not False for d in row['terminals']):issues.append({'job_id':jid,'reason':'release_not_confirmed_by_terminal'})
   if any(any(k not in terminal or terminal[k]!=value for k,value in admission.items())
          for admission in row['admissions'] for terminal in row['terminals']):
    issues.append({'job_id':jid,'reason':'terminal_admission_mismatch'})
- return {'jobs':list(jobs),'issues':issues,'release_records_clean':not issues}
+ return {'jobs':list(jobs),'issues':issues,'author_diagnostic_files':sorted(author_files),'release_records_clean':not issues}
 
 def done_observation(path):
  if not path.exists():return None,'missing_DONE'
