@@ -42,6 +42,34 @@ def _runtime_error_marker(output):
     return next((marker for marker in markers if marker in text), None)
 
 
+# The gateway exposes the leased card as the runtime's own logical device. A command that
+# sets one of these hides that card; it is the caller's error, refused before admission so
+# it costs that request and not the HCU (r3 swiglu, STOP-hcu2, 2026-10-26).
+_VISIBILITY = re.compile(r'(?:^|[\s;&|(\'"`])(HIP_VISIBLE_DEVICES|ROCR_VISIBLE_DEVICES|CUDA_VISIBLE_DEVICES|'
+                         r'DCU_VISIBLE_DEVICES|GPU_DEVICE_ORDINAL)\s*=')
+
+
+def _visibility_override(command):
+    """The device-visibility variable a command would set inside the container, if any."""
+    for word in command:
+        found = _VISIBILITY.search(word)
+        if found:
+            return found.group(1)
+    return None
+
+
+def _holders(device, own_pids=None):
+    """KFD holders of `device` from hy-smi --showpids, excluding this job's processes."""
+    output = subprocess.check_output(['hy-smi', '--showpids'], universal_newlines=True, timeout=15)
+    holders = []
+    for block in re.split(r'\n(?=PID:)', output):
+        pid = re.search(r'PID:\s*(\d+)', block)
+        index = re.search(r"HCU Index:\s*\[\s*'(\d+)'", block)
+        if pid and index and int(index.group(1)) == device:
+            holders.append(int(pid.group(1)))
+    return [pid for pid in holders if own_pids is None or pid not in own_pids]
+
+
 def _select_runtime_device(device, bus_output, cdi, drm_root=Path('/sys/class/drm')):
     """Resolve the runtime's CDI selector by PCI, not dcu-ctk list ordinal."""
     buses = re.findall(r'HCU\[(\d+)\].*?PCI Bus:\s*([0-9a-fA-F:.]+)', bus_output)
@@ -141,6 +169,13 @@ def _receipt_paths(name):
 
 
 def _observe_release(device, job_id, exit_code):
+    """Wait for this job's release, read card-wide.
+
+    Once this job's container is gone and KFD shows nothing of ours, a nonzero VRAM reading
+    with KFD holders on the card belongs to those holders: they cannot be this job's
+    processes. It is recorded and attributed to them instead of left as an unknown release
+    (r3 STOP-hcu3, 2026-10-26: another user's process started during the window). VRAM with
+    no visible holder is still an unknown release."""
     started = time.monotonic()
     observations = []
     while True:
@@ -149,10 +184,16 @@ def _observe_release(device, job_id, exit_code):
             ['docker', 'ps', '-q', '--filter', 'name=^/' + job_id + '$'],
             universal_newlines=True, timeout=15).strip())
         elapsed = time.monotonic() - started
-        observations.append({'elapsed_s': elapsed, 'vram': vram,
-                             'kfd_visible': kfd, 'container_still_running': live})
+        row = {'elapsed_s': elapsed, 'vram': vram, 'kfd_visible': kfd, 'container_still_running': live}
+        if vram != '0%' and not live:
+            row['holders'] = _holders(device)
+        observations.append(row)
         if (vram == '0%' and not kfd and not live) or exit_code != 0 or live or elapsed >= 30:
             return vram, kfd, live, observations
+        if not live and not kfd and row.get('holders'):
+            # Every remaining holder is a process outside this job's (exited) container.
+            row['attributed_to_foreign_holders'] = row['holders']
+            return '0%', kfd, live, observations
         time.sleep(1)
 
 
@@ -176,6 +217,13 @@ def main():
     if args.latest_start_epoch is not None and (
             not math.isfinite(args.latest_start_epoch) or args.latest_start_epoch <= 0):
         parser.error('latest start epoch must be finite and positive')
+    override = _visibility_override(command)
+    if override:
+        print(json.dumps({'status': 'refused_before_admission', 'reason': 'device_visibility_override',
+                          'variable': override,
+                          'repair': 'inside the admitted container keep the gateway-established logical '
+                                    'device; set ' + override + ' only for a host-side wrapper'}), flush=True)
+        return 64
     _check_stop()
     receipt, terminal = _receipt_paths(args.receipt)
     LOCK_DIR.mkdir(parents=True, exist_ok=True)

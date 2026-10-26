@@ -65,6 +65,9 @@ class HcuRunTests(unittest.TestCase):
                     return 'HCU Temp AvgPwr Perf PwrCap VRAM%%\n0 55C 100W auto 800W %s\n' % next(vram)
                 if command[:3] == ['docker', 'ps', '-q']:
                     return ''
+                if command == ['hy-smi', '--showpids']:
+                    # Busy with no visible holder stays an unknown release.
+                    return 'No KFD PIDs currently running!\n'
                 raise AssertionError(command)
 
             def run(command, **_):
@@ -103,6 +106,61 @@ class HcuRunTests(unittest.TestCase):
             vram, kfd, live, observations = hcu_run._observe_release(2, 'owned-job', 0)
         self.assertEqual((vram, kfd, live), ('0%', False, False))
         self.assertEqual([row['vram'] for row in observations], ['32%', '0%'])
+
+    def test_a_foreign_holder_after_exit_is_attributed_not_an_unknown_release(self):
+        """r3 STOP-hcu3: another user's process took the card during the release window."""
+        showpids = ("PIDs for KFD processes:\nPID: 1616893\n\tPASID: 32768\n\tHCU Index: ['3'] \n"
+                    "\tVRAM USED(MiB): 5488\nPID: 1622073\n\tHCU Index: \n")
+        outputs = iter(('', showpids) * 2)
+        with mock.patch.object(hcu_run, '_vram', side_effect=('3%', '3%')), \
+             mock.patch.object(hcu_run, '_kfd_visible', return_value=False), \
+             mock.patch.object(hcu_run.subprocess, 'check_output', side_effect=lambda *a, **k: next(outputs)), \
+             mock.patch.object(hcu_run.time, 'sleep'), \
+             mock.patch.object(hcu_run.time, 'monotonic', side_effect=(0, 1, 31)):
+            vram, kfd, live, observations = hcu_run._observe_release(3, 'owned-job', 0)
+        self.assertEqual((vram, kfd, live), ('0%', False, False))
+        self.assertEqual(observations[-1]['attributed_to_foreign_holders'], [1616893])
+
+    def test_vram_with_no_visible_holder_is_still_an_unknown_release(self):
+        with mock.patch.object(hcu_run, '_vram', side_effect=('3%', '3%')), \
+             mock.patch.object(hcu_run, '_kfd_visible', return_value=False), \
+             mock.patch.object(hcu_run.subprocess, 'check_output',
+                               side_effect=('', 'No KFD PIDs currently running!\n', '', 'No KFD PIDs currently running!\n')), \
+             mock.patch.object(hcu_run.time, 'sleep'), \
+             mock.patch.object(hcu_run.time, 'monotonic', side_effect=(0, 1, 31)):
+            vram, _, _, observations = hcu_run._observe_release(3, 'owned-job', 0)
+        self.assertEqual(vram, '3%')
+        self.assertNotIn('attributed_to_foreign_holders', observations[-1])
+
+    def test_a_holder_on_another_card_is_not_attributed(self):
+        showpids = "PID: 99\n\tHCU Index: ['5'] \n"
+        with mock.patch.object(hcu_run, '_vram', side_effect=('3%', '3%')), \
+             mock.patch.object(hcu_run, '_kfd_visible', return_value=False), \
+             mock.patch.object(hcu_run.subprocess, 'check_output', side_effect=('', showpids, '', showpids)), \
+             mock.patch.object(hcu_run.time, 'sleep'), \
+             mock.patch.object(hcu_run.time, 'monotonic', side_effect=(0, 1, 31)):
+            vram, _, _, _ = hcu_run._observe_release(3, 'owned-job', 0)
+        self.assertEqual(vram, '3%')
+
+    def test_a_device_visibility_override_is_refused_before_admission(self):
+        """r3 STOP-hcu2: HIP_VISIBLE_DEVICES=2 inside the container hid the leased card."""
+        for command in (['bash', '-c', 'HIP_VISIBLE_DEVICES=2 python3 run.py'],
+                        ['env', 'ROCR_VISIBLE_DEVICES=0', 'python3', 'x.py'],
+                        ['bash', '-c', 'export CUDA_VISIBLE_DEVICES=1; python3 x.py']):
+            with self.subTest(command=command):
+                self.assertIsNotNone(hcu_run._visibility_override(command))
+        for command in (['python3', 'run.py'], ['bash', '-c', 'echo $HIP_VISIBLE_DEVICES'],
+                        ['python3', '-c', 'import os; print(os.environ.get("MY_HIP_VISIBLE_DEVICES_X"))']):
+            with self.subTest(command=command):
+                self.assertIsNone(hcu_run._visibility_override(command))
+        argv = ['hcu_run.py', '--image', 'img', '--device', '2', '--receipt', 'r.json', '--',
+                'bash', '-c', 'HIP_VISIBLE_DEVICES=2 python3 run.py']
+        with mock.patch.object(hcu_run.sys, 'argv', argv), \
+             mock.patch.object(hcu_run, '_receipt_paths') as receipts, \
+             mock.patch.object(hcu_run, '_stop_for_unknown_release') as stop:
+            self.assertEqual(hcu_run.main(), 64)
+        receipts.assert_not_called()
+        stop.assert_not_called()
 
     def test_runtime_selector_joins_pci_instead_of_reusing_hcu_ordinal(self):
         with tempfile.TemporaryDirectory() as tmp:
