@@ -42,6 +42,69 @@ def _runtime_error_marker(output):
     return next((marker for marker in markers if marker in text), None)
 
 
+# The gateway exposes the leased card as the runtime's own logical device. A command that
+# sets one of these hides that card; it is the caller's error, refused before admission so
+# it costs that request and not the HCU (r3 swiglu, STOP-hcu2, 2026-10-26).
+_VISIBILITY = re.compile(r'(?:^|[;&|(`]|\bexport\s+|\benv\s+(?:-\S+\s+)*|\bdeclare\s+-x\s+)\s*'
+                         r'(HIP_VISIBLE_DEVICES|ROCR_VISIBLE_DEVICES|CUDA_VISIBLE_DEVICES|'
+                         r'DCU_VISIBLE_DEVICES|GPU_DEVICE_ORDINAL)\+?=')
+
+
+def _visibility_override(command):
+    """The device-visibility variable a command assigns inside the container, if any.
+
+    It reads assignments that are a command prefix, an env/export/declare -x argument, or an
+    argv word of its own; a mention in an echo or grep is not an assignment. A program that
+    sets the variable from inside a script is not visible in argv and keeps today's
+    runtime-marker handling.
+    """
+    for index, word in enumerate(command):
+        # An argv word is an assignment only as the first word or right after env/export.
+        if re.fullmatch(r'(HIP|ROCR|CUDA|DCU)_VISIBLE_DEVICES\+?=.*|GPU_DEVICE_ORDINAL\+?=.*', word) and (
+                index == 0 or command[index - 1] in ('env', 'export')):
+            return word.split('=')[0].rstrip('+')
+        # A shell string (bash -c '...') can assign anywhere a command starts.
+        found = _VISIBILITY.search(word) if ' ' in word else None
+        if found:
+            return found.group(1)
+    return None
+
+
+def _holders(device):
+    """KFD holders of `device` from hy-smi --showpids: every PID whose HCU Index names it."""
+    output = subprocess.check_output(['hy-smi', '--showpids'], universal_newlines=True, timeout=15)
+    holders = []
+    for block in re.split(r'(?m)^\s*(?=PID:)', output):
+        pid = re.search(r'PID:\s*(\d+)', block)
+        if not pid:
+            continue
+        index = re.search(r'HCU Index:\s*\[([^\]]*)\]', block)
+        indices = re.findall(r"'(\d+)'", index.group(1)) if index else []
+        if not indices:
+            # A holder whose card cannot be read could be on this card: report it as unknown.
+            return None
+        if str(device) in indices:
+            holders.append(int(pid.group(1)))
+    return holders
+
+
+def _started_after(pid, epoch, proc=Path('/proc')):
+    """Whether a live, non-zombie process started after `epoch` (stat field 22 + btime)."""
+    try:
+        stat = (proc / str(pid) / 'stat').read_text()
+        boot = next(int(line.split()[1]) for line in (proc / 'stat').read_text().splitlines()
+                    if line.startswith('btime '))
+    except (OSError, StopIteration, ValueError):
+        return False
+    try:
+        fields = stat[stat.rindex(')') + 2:].split()
+        if fields[0] == 'Z':
+            return False
+        return boot + int(fields[19]) / os.sysconf('SC_CLK_TCK') > epoch
+    except (ValueError, IndexError):
+        return False
+
+
 def _select_runtime_device(device, bus_output, cdi, drm_root=Path('/sys/class/drm')):
     """Resolve the runtime's CDI selector by PCI, not dcu-ctk list ordinal."""
     buses = re.findall(r'HCU\[(\d+)\].*?PCI Bus:\s*([0-9a-fA-F:.]+)', bus_output)
@@ -156,6 +219,21 @@ def _observe_release(device, job_id, exit_code):
         time.sleep(1)
 
 
+def _foreign_occupancy(device, exited_epoch):
+    """The holders of a card that stayed occupied after this job's container exited, when
+    every one of them started after that exit and so cannot be this job's.
+
+    This decides only whether an unconfirmed release is attributable to someone else (r3
+    STOP-hcu3, 2026-10-26). It never makes a release confirmed: the receipt keeps the
+    observed VRAM and the not-qualified status. A lingering holder of ours started before
+    the exit and keeps the STOP; an empty or unreadable holder list keeps it too.
+    """
+    holders = _holders(device)
+    if holders and all(_started_after(pid, exited_epoch) for pid in holders):
+        return holders
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--image', required=True)
@@ -176,6 +254,13 @@ def main():
     if args.latest_start_epoch is not None and (
             not math.isfinite(args.latest_start_epoch) or args.latest_start_epoch <= 0):
         parser.error('latest start epoch must be finite and positive')
+    override = _visibility_override(command)
+    if override:
+        print(json.dumps({'status': 'refused_before_admission', 'reason': 'device_visibility_override',
+                          'variable': override,
+                          'repair': 'inside the admitted container keep the gateway-established logical '
+                                    'device; set ' + override + ' only for a host-side wrapper'}), flush=True)
+        return 64
     _check_stop()
     receipt, terminal = _receipt_paths(args.receipt)
     LOCK_DIR.mkdir(parents=True, exist_ok=True)
@@ -271,6 +356,7 @@ def main():
         if output:
             print(output, end='' if output.endswith('\n') else '\n', flush=True)
         runtime_error = _runtime_error_marker(output) if exit_code else None
+        exited_epoch = time.time()
         time.sleep(1)
         try:
             after_vram, after_kfd, container_live, release_observations = _observe_release(
@@ -290,8 +376,19 @@ def main():
             status=('completed' if exit_code == 0 and after_vram == '0%'
                     and after_kfd is False and container_live is False else 'not_qualified'),
         )
+        foreign = None
+        if (container_live is False and after_vram not in ('0%', None) and exit_code == 0
+                and not after_kfd):
+            try:
+                foreign = _foreign_occupancy(args.device, exited_epoch)
+            except (OSError, subprocess.SubprocessError, ValueError):
+                foreign = None
+        if foreign:
+            # Still not_qualified with its observed VRAM; only the HCU-wide STOP is withheld.
+            terminal_doc['foreign_occupancy'] = {'holders': foreign, 'rule': 'every holder started after '
+                                                 'this container exited'}
         _write_new(terminal, terminal_doc)
-        if after_vram != '0%' or after_kfd is not False or container_live is not False:
+        if not foreign and (after_vram != '0%' or after_kfd is not False or container_live is not False):
             _stop_for_unknown_release(job_id, 'device_release_not_confirmed: ' + reason)
         elif runtime_error:
             _stop_for_unknown_release(job_id, 'runtime_execution_failed: ' + runtime_error)

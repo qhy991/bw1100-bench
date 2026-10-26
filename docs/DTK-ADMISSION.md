@@ -31,7 +31,22 @@ issued only for a zero exit and an observed released device. After a zero exit
 with the owned container gone, the runner observes release for a bounded
 30-second window; large HCU allocations can outlive the first post-exit sample.
 `release_observations` retains each sample. It never signals a process or
-forces a release, and persistent occupancy remains not-qualified. A missing terminal
+forces a release, and persistent occupancy remains not-qualified.
+
+Occupancy held by processes that cannot be this job's withholds only the HCU-wide STOP.
+After a zero exit with the container gone and KFD showing nothing visible to this user,
+if every `hy-smi --showpids` holder of the card is a live, non-zombie process whose start
+time (`/proc/<pid>/stat` field 22 plus `btime`) is after `docker run` returned, the terminal keeps its observed VRAM and `not_qualified`
+status and adds `foreign_occupancy` with those holders. A holder that started before that
+point, a zombie, a vanished PID, a holder whose card index cannot be read, or an empty
+holder list keeps the STOP. Holders show who occupies the card, not whose memory remains. The next
+admission's own idle check still refuses a card that is not idle.
+
+A command that assigns `HIP/ROCR/CUDA/DCU_VISIBLE_DEVICES` or `GPU_DEVICE_ORDINAL`
+(a leading argv word, right after `env`/`export`, or after `;`, `&`, `|`, `(` or a
+backtick inside a shell string) is refused before any lock, receipt or container, with exit 64 and the repair.
+Inside the admitted container the gateway's logical device is the only one visible; an
+assignment made from inside a script keeps the runtime-marker handling. A missing terminal
 or disconnected SSH is **unknown**, not a pass or an idle declaration: inspect
 the exact container, HCU and artifacts before any resubmission.
 
