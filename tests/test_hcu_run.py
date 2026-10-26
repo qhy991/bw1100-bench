@@ -115,7 +115,7 @@ class HcuRunTests(unittest.TestCase):
 
     def test_a_holder_that_started_after_exit_is_foreign(self):
         """r3 STOP-hcu3: another user's process took the card during the release window."""
-        showpids = "PID: 1616893\n\tHCU Index: ['3'] \nPID: 1622073\n\tHCU Index: \n"
+        showpids = "PID: 1616893\n\tHCU Index: ['3'] \nPID: 77\n\tHCU Index: ['1'] \n"
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             ticks = hcu_run.os.sysconf('SC_CLK_TCK')
@@ -161,6 +161,22 @@ class HcuRunTests(unittest.TestCase):
                  mock.patch.object(hcu_run.subprocess, 'check_output', return_value=showpids), \
                  mock.patch.object(hcu_run, '_started_after', return_value=True):
                 self.assertIsNone(hcu_run._foreign_occupancy(3, 2000.0))
+
+    def test_a_holder_whose_card_cannot_be_read_keeps_the_stop(self):
+        """r3 showed PID 1622073 with an empty HCU Index; it could be on this card."""
+        showpids = "PID: 1616893\n\tHCU Index: ['3'] \nPID: 1622073\n\tHCU Index: \n"
+        with mock.patch.object(hcu_run.subprocess, 'check_output', return_value=showpids), \
+             mock.patch.object(hcu_run, '_started_after', return_value=True):
+            self.assertIsNone(hcu_run._holders(3))
+            self.assertIsNone(hcu_run._foreign_occupancy(3, 2000.0))
+
+    def test_a_malformed_stat_is_not_foreign(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'stat').write_text('cpu 0\nbtime 1000\n')
+            (root / '5').mkdir()
+            (root / '5' / 'stat').write_text('5 (python3) S 0 0\n')
+            self.assertFalse(hcu_run._started_after(5, 2000.0, root))
 
     def test_holder_parsing_reads_every_index_and_indented_blocks(self):
         showpids = "PIDs for KFD processes:\n  PID: 7\n    HCU Index: ['5', '3'] \n  PID: 8\n    HCU Index: ['3'] \n"

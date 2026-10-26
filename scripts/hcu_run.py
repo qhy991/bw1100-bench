@@ -76,8 +76,14 @@ def _holders(device):
     holders = []
     for block in re.split(r'(?m)^\s*(?=PID:)', output):
         pid = re.search(r'PID:\s*(\d+)', block)
+        if not pid:
+            continue
         index = re.search(r'HCU Index:\s*\[([^\]]*)\]', block)
-        if pid and index and str(device) in re.findall(r"'(\d+)'", index.group(1)):
+        indices = re.findall(r"'(\d+)'", index.group(1)) if index else []
+        if not indices:
+            # A holder whose card cannot be read could be on this card: report it as unknown.
+            return None
+        if str(device) in indices:
             holders.append(int(pid.group(1)))
     return holders
 
@@ -90,10 +96,13 @@ def _started_after(pid, epoch, proc=Path('/proc')):
                     if line.startswith('btime '))
     except (OSError, StopIteration, ValueError):
         return False
-    fields = stat[stat.rindex(')') + 2:].split()
-    if fields[0] == 'Z':
+    try:
+        fields = stat[stat.rindex(')') + 2:].split()
+        if fields[0] == 'Z':
+            return False
+        return boot + int(fields[19]) / os.sysconf('SC_CLK_TCK') > epoch
+    except (ValueError, IndexError):
         return False
-    return boot + int(fields[19]) / os.sysconf('SC_CLK_TCK') > epoch
 
 
 def _select_runtime_device(device, bus_output, cdi, drm_root=Path('/sys/class/drm')):
@@ -372,7 +381,7 @@ def main():
                 and not after_kfd):
             try:
                 foreign = _foreign_occupancy(args.device, exited_epoch)
-            except (OSError, subprocess.SubprocessError):
+            except (OSError, subprocess.SubprocessError, ValueError):
                 foreign = None
         if foreign:
             # Still not_qualified with its observed VRAM; only the HCU-wide STOP is withheld.
