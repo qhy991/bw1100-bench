@@ -2,7 +2,7 @@
 from pathlib import Path
 import argparse,collections,fcntl,json,os,subprocess,sys,time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.json_stream import read_json_stream
+from scripts.json_stream import author_diagnostic, read_json_stream
 from scripts.release_review import reviewed_logs
 from scripts.queue_handoff import UNKNOWN_EXIT, restore, validate_handoff
 ROOT = None
@@ -11,13 +11,16 @@ def read(path):return json.loads(path.read_text())
 def atomic(path,value):
  tmp=path.with_suffix('.tmp');tmp.write_text(json.dumps(value,indent=2));tmp.replace(path)
 def release_audit(root, preexisting_json=()):
- jobs={};issues=[];declared=set();seen=set();preexisting=set(preexisting_json)
+ jobs={};issues=[];author_files=[];declared=set();seen=set();preexisting=set(preexisting_json)
  def consume(p):
   if str(p.relative_to(root)) in preexisting or p in seen:return
   seen.add(p)
   if p.is_symlink():issues.append({'file':str(p.relative_to(root)),'reason':'symlink_not_followed'});return
   try:records=[read(p)] if p.name.endswith('-terminal.json') else read_json_stream(p)
-  except (ValueError,OSError):issues.append({'file':str(p.relative_to(root)),'reason':'unreadable_or_partial_record'});return
+  except OSError:issues.append({'file':str(p.relative_to(root)),'reason':'unreadable_or_partial_record'});return
+  except ValueError:
+   if not p.name.endswith('-terminal.json') and author_diagnostic(p.read_text()):author_files.append(str(p.relative_to(root)));return
+   issues.append({'file':str(p.relative_to(root)),'reason':'unreadable_or_partial_record'});return
   for d in records:
    if not isinstance(d,dict):continue
    refs=d.get('admission_receipts',[])
@@ -51,7 +54,7 @@ def release_audit(root, preexisting_json=()):
   if any(any(k not in terminal or terminal[k]!=value for k,value in admission.items())
          for admission in row['admissions'] for terminal in row['terminals']):
    issues.append({'job_id':jid,'reason':'terminal_admission_mismatch'})
- return {'jobs':list(jobs),'issues':issues,'release_records_clean':not issues}
+ return {'jobs':list(jobs),'issues':issues,'author_diagnostic_files':author_files,'release_records_clean':not issues}
 
 def done_observation(path):
  if not path.exists():return None,'missing_DONE'

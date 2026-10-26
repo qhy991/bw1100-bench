@@ -10,7 +10,9 @@ class ReviewTests(unittest.TestCase):
   self.terminal=dict(self.admission,completed_at=1,exit_code=1,container_still_running=False,after_vram='0%',after_kfd_visible=False)
   for name,data in [('receipt.json',self.admission),('receipt-terminal.json',self.terminal)]:
    (self.root/name).write_text(json.dumps(data))
-  (self.root/'stdout.json').write_text('runtime warning\n{"job_id":"owned-job","exit_code":1}\n')
+  # Starts like a record, so only an explicit review can classify it (#42 exempts only text
+  # that cannot be or hide a gateway record).
+  (self.root/'stdout.json').write_text('{"warning":"runtime"}\n{"job_id":"owned-job","exit_code":1}\n{')
   self.review=dict(schema='bw1100-bench.diagnostic-log-review.v1',authorization='Explicit user authorization',runs=[dict(root=str(self.root),logs=[dict(path='stdout.json',sha256=self.digest('stdout.json'),receipt_pairs=[dict(admission='receipt.json',terminal='receipt-terminal.json',admission_sha256=self.digest('receipt.json'),terminal_sha256=self.digest('receipt-terminal.json'))])])])
  def digest(self,name):return hashlib.sha256((self.root/name).read_bytes()).hexdigest()
  def test_exact_log_preserves_failed_exit_and_confirms_release(self):
@@ -19,6 +21,11 @@ class ReviewTests(unittest.TestCase):
   self.assertEqual(exclusions,['stdout.json'])
   self.assertTrue(release_audit(self.root,exclusions)['release_records_clean'])
   self.assertEqual(json.loads((self.root/'receipt-terminal.json').read_text())['exit_code'],1)
+ def test_plain_captured_output_needs_no_review(self):
+  (self.root/'stdout.json').write_text('runtime warning\n{"job_id":"owned-job","exit_code":1}\n')
+  audit=release_audit(self.root)
+  self.assertTrue(audit['release_records_clean'])
+  self.assertEqual(audit['author_diagnostic_files'],['stdout.json'])
  def test_changed_file_hash_refused(self):
   (self.root/'stdout.json').write_text('changed')
   with self.assertRaises(ValueError):reviewed_logs(self.root,self.review)

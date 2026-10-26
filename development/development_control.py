@@ -6,7 +6,7 @@ import re
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.json_stream import read_json_stream
+from scripts.json_stream import author_diagnostic, read_json_stream
 
 
 def released(root):
@@ -24,8 +24,14 @@ def released(root):
         try:
             records = ([json.loads(path.read_text())] if path.name.endswith('-terminal.json')
                        else read_json_stream(path))
-        except (OSError, ValueError):
+        except OSError:
             return False
+        except ValueError:
+            # An author's captured output is not a gateway record (#42); anything that could
+            # be one, or could hide one, still withholds the release.
+            if path.name.endswith('-terminal.json') or not author_diagnostic(path.read_text()):
+                return False
+            continue
         for record in records:
             if not isinstance(record, dict):
                 continue

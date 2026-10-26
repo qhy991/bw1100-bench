@@ -75,6 +75,41 @@ class StreamReleaseTests(unittest.TestCase):
         self.path.symlink_to(target)
         self.gates(False)
 
+    def test_captured_author_stdout_is_not_an_unreleased_admission(self):
+        """#42, r4b fib_fused_add_rmsnorm_h4096: a probe's whole stdout redirected into a .json
+        file stopped HCU 5 although both gateway terminals certified the release."""
+        write(self.root / 'campaign/admission.json', admission())
+        write(self.root / 'campaign/admission-terminal.json', terminal())
+        captured = ('Ignoring [] DCUs as they are invalid\n'
+                    '{"level":"warning","msg":"mount dir: /data3"}\n'
+                    '{"runtime_device_identity": "passed"}\n'
+                    '{\n "scope": "HIP-event bracketed GPU time",\n "native_us": {"median": 43.1}\n}\n'
+                    '{"job_id": "owned", "status": "completed", "exit_code": 0}\n')
+        for name in ('.local/profile/probe/timing.json', 'campaign/logs/probe-timing.json'):
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(captured)
+        self.gates(True)
+        self.assertEqual(sorted(release_audit(self.root)['author_diagnostic_files']),
+                         ['.local/profile/probe/timing.json', 'campaign/logs/probe-timing.json'])
+
+    def test_text_that_could_be_or_hide_a_gateway_record_still_withholds_release(self):
+        write(self.root / 'campaign/admission.json', admission())
+        write(self.root / 'campaign/admission-terminal.json', terminal())
+        for content in (
+                'warning\n' + json.dumps(admission('unreleased')) + '\n{',      # names the schema
+                'warning\n{"schema": "bw1100-bench.hcu-admission.v1", "job_',    # torn after a prefix
+                '{"schema": "bw1100-bench.hc',                                   # torn gateway write
+                '{"warning": 1}\n{',                                            # starts like a record
+                'warning\n{"admission_receipts": ["campaign/x"]',                # hides a declaration
+                '', ' \n\t'):                                                  # empty
+            with self.subTest(content=content):
+                self.path.write_text(content)
+                self.gates(False)
+        self.path.write_text('{}')
+        (self.root / 'campaign/other-terminal.json').write_text('not json at all')
+        self.gates(False)
+
     def test_later_admission_and_declared_receipt_cannot_be_skipped(self):
         self.path.write_text('{"warning":"prefix"}\n' + json.dumps(admission()))
         self.gates(False)
