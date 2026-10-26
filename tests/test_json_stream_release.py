@@ -185,6 +185,12 @@ class StreamReleaseTests(unittest.TestCase):
         (self.root / 'campaign/declared.receipt').write_text('warning\n' + released_line + '\n')
         self.assertFalse(release_audit(self.root)['release_records_clean'])
         self.assertFalse(released(self.root))
+        # The same receipt named by an absolute path is still a declared receipt.
+        self.path.write_text(json.dumps({'admission_receipts': [str(self.root / 'campaign/declared.json')]}))
+        (self.root / 'campaign/declared.receipt').unlink()
+        (self.root / 'campaign/declared.json').write_text('warning\n' + released_line + '\n')
+        self.assertFalse(release_audit(self.root)['release_records_clean'])
+        self.assertFalse(released(self.root))
 
     def test_later_admission_and_declared_receipt_cannot_be_skipped(self):
         self.path.write_text('{"warning":"prefix"}\n' + json.dumps(admission()))

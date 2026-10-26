@@ -49,11 +49,15 @@ def release_audit(root, preexisting_json=()):
   if not p.is_file():issues.append({'file':ref,'reason':'declared_receipt_missing'})
   elif str(p.relative_to(root)) in preexisting:issues.append({'file':ref,'reason':'declared_receipt_is_preexisting_source'})
   else:consume(p)
+ declared_paths=set()
+ for x in declared:
+  try:declared_paths.add((root/x).resolve())
+  except (OSError,ValueError):pass
  released={jid for jid,row in jobs.items() if row['terminals'] and all(
   d['container_still_running'] is False and d['after_vram']=='0%' and d['after_kfd_visible'] is False
   for d in row['terminals'])}
  for name,named in author_files.items():
-  if name in {os.path.normpath(x) for x in declared}:issues.append({'file':name,'reason':'declared_receipt_unreadable'});continue
+  if (root/name).resolve() in declared_paths:issues.append({'file':name,'reason':'declared_receipt_unreadable'});continue
   if not named<=released:issues.append({'file':name,'reason':'author_output_names_unreleased_job',
    'job_ids':sorted(named-released)})
  for jid,row in jobs.items():
