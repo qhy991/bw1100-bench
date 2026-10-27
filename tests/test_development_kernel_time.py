@@ -200,8 +200,11 @@ class OwnerKernelTimePass(unittest.TestCase):
                 [device] = [argv for argv in calls if 'scripts/hcu_run.py' in argv and 'campaign/development_device.py' in argv]
                 wait = int(device[device.index('--queue-timeout') + 1])
                 latest = float(device[device.index('--latest-start-epoch') + 1])
+                timeout = int(device[device.index('--timeout') + 1])
                 self.assertEqual(wait > 300, longer)
                 self.assertLessEqual(time.time() + wait, latest + 5)
+                # The device job ends with room for its terminal and compare before the owner stop at stop-20 s.
+                self.assertLessEqual(latest + timeout, stop_at - (150 if longer else 30))
 
     def test_too_little_time_skips_the_pass_with_its_reason(self):
         import time

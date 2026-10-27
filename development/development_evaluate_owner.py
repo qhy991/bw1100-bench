@@ -8,12 +8,15 @@ os.environ['BWBENCH_STOP_FILE']=b['batch_stop_file']
 if a.phase=='search' and (R/'campaign/SEARCH_CLOSE.json').exists():raise SystemExit('search-close request pending; no new device work')
 code=subprocess.call(['bash','scripts/dtk.sh','cpu',b['image'],'python3','campaign/development_evaluate.py','--candidate',a.candidate,'--id',a.id,'--phase','emit','--result-phase',a.phase])
 if code or not (folder/'emission.json').exists():raise SystemExit(code)
-stop=d['search_stop_at_epoch'] if a.phase=='search' else d['stop_at_epoch'];timeout=min(600,int(stop-time.time())-30);assert timeout>=10
+stop=d['search_stop_at_epoch'] if a.phase=='search' else d['stop_at_epoch']
+# The owner stops confirmation at stop-20 s; keep room after the device job for its terminal receipt and compare.
+reserve=0 if a.phase=='search' else 120
+timeout=min(600,int(stop-time.time())-30-reserve);assert timeout>=10;latest=stop-timeout-30-reserve
 if stopped(b):raise SystemExit('batch STOP: no device admission')
 if a.phase=='search' and (R/'campaign/SEARCH_CLOSE.json').exists():raise SystemExit('search-close request pending; no device admission')
 # Siblings on the card queue for its lock; confirmation is attempted once, so it waits as long as the phase still admits it.
-queue=300 if a.phase=='search' else max(1,min(3600,int(stop-time.time())-timeout-30))
-cmd=['python3','scripts/hcu_run.py','--image',b['image'],'--device',str(b['hcu']),'--timeout',str(timeout),'--queue-timeout',str(queue),'--latest-start-epoch',str(stop-timeout-30),'--receipt',str((folder/'admission.json').relative_to(R)),'--','env','TRITON_F32_DEFAULT=ieee','TRITON_CACHE_DIR=/work/.local/triton-cache','python3','campaign/development_device.py','--emission',str((folder/'emission.json').relative_to(R)),'--output',str((folder/'observed.pt').relative_to(R))]
+queue=300 if a.phase=='search' else max(1,min(3600,int(latest-time.time())))
+cmd=['python3','scripts/hcu_run.py','--image',b['image'],'--device',str(b['hcu']),'--timeout',str(timeout),'--queue-timeout',str(queue),'--latest-start-epoch',str(latest),'--receipt',str((folder/'admission.json').relative_to(R)),'--','env','TRITON_F32_DEFAULT=ieee','TRITON_CACHE_DIR=/work/.local/triton-cache','python3','campaign/development_device.py','--emission',str((folder/'emission.json').relative_to(R)),'--output',str((folder/'observed.pt').relative_to(R))]
 with (folder/'device.log').open('x') as log:code=subprocess.call(cmd,stdout=log,stderr=subprocess.STDOUT)
 if code:
  reason=device_failure_is_infrastructure(folder)
