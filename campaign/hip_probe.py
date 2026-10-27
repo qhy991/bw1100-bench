@@ -314,6 +314,15 @@ def run_probe(root, identity, request_name, skip_reason=''):
                     '--receipt', receipt, '--'] + device_command
                 with (folder / (stage + '.log')).open('x') as log:
                     code = subprocess.call(gateway, cwd=root, env=env, stdout=log, stderr=subprocess.STDOUT)
+                if kind == 'development' and code:
+                    from campaign.development_stop import lock_wait_timed_out
+                    # A sibling author held the HCU lock past the queue timeout: nothing was
+                    # admitted, so there is no release to verify and no reason to stop the card.
+                    if (lock_wait_timed_out(folder, stage + '-admission.json', stage + '.log')
+                            and not (folder / (stage + '-admission-terminal.json')).exists()):
+                        # Unlisted: a receipt that was never written must not hold the Run's release open.
+                        outcome['admission_receipts'].remove(receipt)
+                        raise ValueError(stage + ' waited past its HCU lock queue timeout; nothing was admitted')
                 try:
                     terminal = release(root, receipt, bound, device_command, deadline['search_stop_at_epoch'])
                 except NativeReleaseUnknown as error:
