@@ -24,6 +24,26 @@ files without modifying the image. CPU mode also exports the host username
 for Python packages that call `getpass.getuser()` under a UID absent from the
 container's passwd file.
 
+The receipt path must resolve to a `.json` file under `campaign/` or `.local/`, not
+below `.git`, `.deps`, `.data`, `triton-cache`, `aiter-jit-cache` or `__pycache__`, and
+not named `*-terminal.json`. Both release checks, `development_control.released` and
+`bench_queue.release_audit`, read every `.json` file there. A receipt elsewhere would be
+invisible to them, so a gateway killed before its terminal could be certified released.
+Any other path, including a symlink that resolves outside that scope, is a caller error.
+It exits 2 before the lock, the device check or any receipt, and writes no STOP.
+`scripts/hcu_run.py` owns the scope as `RECEIPT_ROOTS` and `RECEIPT_UNWALKED_DIRS`.
+
+The lock wait separates that check from the write. Each receipt is therefore created by
+opening every directory below the repository root without following a symlink, then
+creating the file exclusively in the last one. A directory swapped for a symlink in
+between makes the gateway fail instead of writing elsewhere.
+
+The release checks fail closed inside `campaign/` and `.local/`. They read a `.json`
+file below a cache directory there too, because a gateway pinned before this guard could
+write one. A symlinked or unreadable directory there withholds the release. They keep
+their copy of the scope in `scripts/json_stream.py`; a test holds it equal to the
+gateway copies, and preparation refuses a pinned gateway whose `hcu_run.py` lacks it.
+
 The output path is create-only. The initial `<name>.json` records admission,
 source command, image, device and deadline; `<name>-terminal.json` records exit
 code, container presence and post-run HCU/KFD observations. `completed` is
