@@ -235,6 +235,10 @@ class NativeProbeTests(unittest.TestCase):
         self.assertEqual(result['status'], 'failed')
         self.assertIn('queue timeout', result['reason'])
         self.assertFalse(Path(self.bound['batch_stop_file']).exists())
+        outcome = json.loads((self.root / 'campaign/engineering/lock-wait/outcome.json').read_text())
+        self.assertEqual(outcome['admission_receipts'], [])
+        from development.development_control import released
+        self.assertTrue(released(self.root))
 
     def test_released_native_candidate_or_late_failure_does_not_halt_development(self):
         self.bound.update(compiler=self.bound['compiler_commit'],
