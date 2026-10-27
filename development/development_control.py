@@ -58,6 +58,13 @@ def released(root):
                     return False
                 declared.add(referenced.resolve())
                 pending.append(referenced)
+                # The gateway writes a declared receipt's terminal beside it, which may lie
+                # outside the walked directories; read it so the job-id pairing can see it.
+                sibling = referenced.with_name(referenced.stem + '-terminal.json')
+                if sibling.is_symlink():
+                    return False
+                if sibling.is_file():
+                    pending.append(sibling)
             if record.get('schema') != 'bw1100-bench.hcu-admission.v1':
                 continue
             job_id = record.get('job_id')
