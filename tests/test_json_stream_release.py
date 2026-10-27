@@ -1,6 +1,8 @@
 """Complete diagnostic streams must not hide missing or partial device releases."""
 import importlib.util
 import json
+import os
+import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -12,7 +14,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from development.development_control import released
 from scripts.bench_queue import release_audit
-from scripts.json_stream import read_json_stream
+from scripts.json_stream import RELEASE_ROOTS, RELEASE_UNWALKED_DIRS, read_json_stream
+
+_GATEWAY = importlib.util.spec_from_file_location('hcu_run', str(ROOT / 'scripts/hcu_run.py'))
+hcu_run = importlib.util.module_from_spec(_GATEWAY)
+_GATEWAY.loader.exec_module(hcu_run)
 
 
 def write(path, value):
@@ -133,8 +139,206 @@ class StreamReleaseTests(unittest.TestCase):
         write(self.root / 'campaign/admission-terminal.json', terminal(container_still_running=True))
         self.gates(False)
 
+    def test_the_gateway_prepared_runs_execute_declares_the_release_checks_scope(self):
+        """#45 review: Runs execute scripts/hcu_run.py from the plan's pinned gateway commit,
+        not this branch's copy. This branch's copy and every gateway branch copy reachable here
+        enforce exactly the release checks' scope. Only a gateway at or before b29aa5a (#41,
+        the last one without the guard) may lack it, and preparation refuses that one."""
+        from scripts.prepare_development import require_receipt_scope
+        require_receipt_scope((ROOT / 'scripts/hcu_run.py').read_bytes(), 'working tree')
+        pinned = os.environ.get('BWBENCH_GATEWAY_COMMIT')
+        refs = ([pinned] if pinned else []) + [
+            prefix + 'task/dcu-gateway-' + name for name in ('pinned-rocprof', 'receipt-scope-gw')
+            for prefix in ('origin/', '')]
+        guarded = {}
+        for ref in refs:
+            try:
+                source = subprocess.check_output(['git', '-C', str(ROOT), 'show', ref + ':scripts/hcu_run.py'],
+                                                 stderr=subprocess.DEVNULL)
+            except (OSError, subprocess.CalledProcessError):
+                self.assertNotEqual(ref, pinned, 'the pinned gateway commit is not reachable')
+                continue
+            with self.subTest(gateway=ref):
+                if b'RECEIPT_ROOTS' not in source:
+                    self.assertNotEqual(ref, pinned)
+                    self.assertEqual(subprocess.run(['git', '-C', str(ROOT), 'merge-base', '--is-ancestor',
+                                                     ref, 'b29aa5a']).returncode, 0,
+                                     'a gateway after b29aa5a lost the receipt-scope guard')
+                    with self.assertRaisesRegex(ValueError, 'receipt-scope guard'):
+                        require_receipt_scope(source, ref)
+                    continue
+                require_receipt_scope(source, ref)
+                guarded[ref] = source
+        if not guarded:
+            self.skipTest('no gateway branch copy with the #44 guard is reachable in this clone')
+        self.assertEqual(len(set(guarded.values())), 1, 'the reachable gateway copies differ')
+
+    def test_every_directory_the_gateway_admits_is_read_by_both_release_checks(self):
+        """#44: the gateway's receipt scope and the two release walks are one notion."""
+        self.assertEqual(hcu_run.RECEIPT_ROOTS, RELEASE_ROOTS)
+        self.assertEqual(hcu_run.RECEIPT_UNWALKED_DIRS, RELEASE_UNWALKED_DIRS)
+        tops = (*RELEASE_ROOTS, *sorted(RELEASE_UNWALKED_DIRS), 'native', 'results', 'docs')
+        middles = ('', 'sub', 'evaluations/e1', *sorted(RELEASE_UNWALKED_DIRS))
+        admitted = []
+        for top in tops:
+            for middle in middles:
+                name = '/'.join(x for x in (top, middle, 'probe-admission.json') if x)
+                with tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary).resolve()
+                    (root / 'campaign').mkdir()
+                    with patch.object(hcu_run, 'ROOT', root):
+                        try:
+                            path, terminal_path = hcu_run._receipt_paths(name)
+                        except ValueError:
+                            continue
+                    admitted.append(name)
+                    with self.subTest(receipt=name):
+                        self.root = root
+                        write(path, admission())
+                        self.gates(False)  # a gateway killed before its terminal
+                        write(terminal_path, terminal())
+                        self.gates(True)
+                        write(terminal_path, terminal(after_vram='97%'))
+                        self.gates(False)
+        self.assertEqual(sorted(admitted), sorted(
+            '/'.join(x for x in (top, middle, 'probe-admission.json') if x)
+            for top in RELEASE_ROOTS for middle in ('', 'sub', 'evaluations/e1')))
+
+    def test_a_receipt_a_pre_44_gateway_wrote_into_a_cache_inside_the_scope_is_read(self):
+        """#45 review: prepared Runs run the pinned gateway (b29aa5a admits campaign/__pycache__/p.json).
+        A killed gateway's receipt there must withhold the release, not be skipped as a cache."""
+        write(self.root / 'campaign/admission.json', admission())
+        write(self.root / 'campaign/admission-terminal.json', terminal())
+        self.gates(True)
+        for directory in sorted(RELEASE_UNWALKED_DIRS):
+            for top in RELEASE_ROOTS:
+                receipt = self.root / top / 'sub' / directory / 'p.json'
+                with self.subTest(receipt=receipt.relative_to(self.root)):
+                    write(receipt, admission('killed'))
+                    self.gates(False)
+                    write(receipt.with_name('p-terminal.json'), terminal('killed'))
+                    self.gates(True)
+                    receipt.unlink()
+                    receipt.with_name('p-terminal.json').unlink()
+        # Outside the scope the walk still prunes them (no gateway since #44 writes there).
+        write(self.root / 'native/.data/a.json', admission('outside'))
+        self.gates(True)
+
+    def test_benign_cache_files_and_symlinks_inside_the_scope_certify(self):
+        """#45 re-review: Runs point TRITON_CACHE_DIR and AITER_JIT_DIR into .local. A compile
+        killed by the gateway timeout, an empty or non-UTF-8 cache file and a venv or author
+        symlink must not withhold an otherwise released Run (development_launch halts on it)."""
+        write(self.root / 'campaign/admission.json', admission())
+        write(self.root / 'campaign/admission-terminal.json', terminal())
+        self.gates(True)
+        benign = {
+            '.local/triton-cache/H4SH/tmp.pid_1234_5678/kernel.json': b'{"hash": "H4SH", "target": {"ba',
+            '.local/triton-cache/H4SH/empty.json': b'',
+            '.local/aiter-jit-cache/build/x.json': b'\xff\xfe\x00{\x80not utf-8',
+            'campaign/__pycache__/stale.json': b'{"job_id": "bw-0123", "status": "completed"',
+            '.local/triton-cache/H4SH/kernel.json': b'{"hash": "H4SH", "num_warps": 4}',
+        }
+        for name, data in benign.items():
+            (self.root / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.root / name).write_bytes(data)
+        self.gates(True)
+        (self.root / '.local/venv/lib').mkdir(parents=True)
+        (self.root / '.local/venv/lib64').symlink_to('lib', target_is_directory=True)
+        (self.root / '.local/profile/RUN').mkdir(parents=True)
+        (self.root / '.local/latest').symlink_to(self.root / '.local/profile/RUN', target_is_directory=True)
+        # Ignored like the cache, even with a receipt-shaped file behind it.
+        write(self.root / '.data/cached/p.json', admission('cached'))
+        (self.root / '.local/triton-cache/elsewhere').symlink_to(self.root / '.data/cached', target_is_directory=True)
+        (self.root / 'campaign/home').symlink_to(Path(self.temp.name).parent, target_is_directory=True)
+        (self.root / 'native').mkdir()
+        (self.root / 'campaign/empty').symlink_to(self.root / 'native', target_is_directory=True)
+        self.gates(True)
+        notes = release_audit(self.root)['notes']
+        for link in ('.local/venv/lib64', '.local/latest', 'campaign/home', 'campaign/empty'):
+            self.assertIn({'file': link, 'reason': 'symlink_directory_not_followed'}, notes)
+        # A receipt the walk reads through the link target directly still counts.
+        write(self.root / '.local/profile/RUN/p.json', admission('killed'))
+        self.gates(False)
+        write(self.root / '.local/profile/RUN/p-terminal.json', terminal('killed'))
+        self.gates(True)
+        # No gateway writes outside the Run root, so a link there is not followed or judged.
+        foreign = tempfile.TemporaryDirectory()
+        self.addCleanup(foreign.cleanup)
+        outside = Path(foreign.name).resolve()
+        write(outside / 'p.json', admission('foreign'))
+        for name in sorted(os.listdir(self.root / '.local')):
+            target = self.root / '.local' / name
+            target.unlink() if target.is_symlink() else None
+        shutil.rmtree(self.root / '.local')
+        (self.root / '.local').symlink_to(outside, target_is_directory=True)
+        self.gates(True)
+        self.assertIn({'file': '.local', 'reason': 'symlink_directory_not_followed'},
+                      release_audit(self.root)['notes'])
+
+    def test_a_receipt_shaped_file_inside_a_cache_still_withholds_the_release(self):
+        write(self.root / 'campaign/admission.json', admission())
+        write(self.root / 'campaign/admission-terminal.json', terminal())
+        for directory in sorted(RELEASE_UNWALKED_DIRS):
+            for data in (b'{"schema": "bw1100-bench.hcu-admission.v1", "job_id": "ki',
+                         b'\xff' + json.dumps(admission('killed')).encode(),
+                         json.dumps({'admission_receipts': ['campaign/missing.json']}).encode()):
+                path = self.root / '.local' / directory / 'h' / 'p.json'
+                with self.subTest(directory=directory, data=data[:24]):
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(data)
+                    self.gates(False)
+                    path.unlink()
+                    self.gates(True)
+
+    def test_a_symlinked_directory_that_could_hide_a_receipt_withholds_the_release(self):
+        """A symlink under campaign/ or .local/ outside the caches, whose target inside the Run
+        root but outside what the walk reads holds a receipt-shaped file, withholds the release."""
+        write(self.root / 'campaign/admission.json', admission())
+        write(self.root / 'campaign/admission-terminal.json', terminal())
+        write(self.root / '.data/r/deep/p.json', admission('killed'))
+        (self.root / '.local').mkdir()
+        (self.root / 'native').mkdir()
+        (self.root / 'native/to-data').symlink_to(self.root / '.data/r', target_is_directory=True)
+        for link, target in (('campaign/evaluations', '.data/r'), ('.local/profile', '.data'),
+                             ('campaign/chain', 'native')):
+            with self.subTest(link=link):
+                (self.root / link).symlink_to(self.root / target, target_is_directory=True)
+                self.gates(False)
+                self.assertIn({'file': link, 'reason': 'receipt_behind_symlinked_directory'},
+                              release_audit(self.root)['issues'])
+                (self.root / link).unlink()
+                self.gates(True)
+        (self.root / '.local').rmdir()
+        (self.root / '.local').symlink_to(self.root / '.data', target_is_directory=True)
+        self.gates(False)
+        (self.root / '.local').unlink()
+        (self.root / '.local').symlink_to(self.root / 'native/empty', target_is_directory=True)
+        (self.root / 'native/empty').mkdir()
+        self.gates(True)
+        (self.root / '.local').unlink()
+        (self.root / 'native/link').symlink_to(self.root / '.data/r', target_is_directory=True)
+        self.gates(True)  # outside the scope a symlink is still not followed, as before
+
+    @unittest.skipIf(os.geteuid() == 0, 'root reads a 0o300 directory')
+    def test_an_unreadable_directory_inside_the_scope_withholds_the_release(self):
+        write(self.root / 'campaign/admission.json', admission())
+        write(self.root / 'campaign/admission-terminal.json', terminal())
+        for name in ('campaign/evaluations/e1', '.local/profile'):
+            hidden = self.root / name
+            write(hidden / 'p.json', admission('killed'))
+            hidden.chmod(0o300)
+            try:
+                with self.subTest(directory=name):
+                    self.gates(False)
+                    self.assertIn({'file': name, 'reason': 'unreadable_directory'},
+                                  release_audit(self.root)['issues'])
+            finally:
+                hidden.chmod(0o700)
+            (hidden / 'p.json').unlink()
+        self.gates(True)
+
     def test_captured_output_with_its_receipt_outside_the_walk_is_refused(self):
-        """The gateway accepts any --receipt path in the repo; .data is outside both walks."""
+        """A receipt in .data is outside both walks; the gateway now refuses to write one (#44)."""
         write(self.root / '.data/r/admission.json', admission())
         probe = self.root / '.local/profile/probe/timing.json'
         probe.parent.mkdir(parents=True, exist_ok=True)

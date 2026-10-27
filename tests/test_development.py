@@ -155,6 +155,48 @@ class DevelopmentTests(unittest.TestCase):
         self.assertEqual(list((run / 'campaign/inherited').iterdir()), [])
         self.assertEqual(reconcile(run)['case_ids'], CASES)
 
+    def test_a_pinned_gateway_without_the_receipt_scope_guard_prepares_no_run(self):
+        """#45 review: a Run executes the pinned gateway's hcu_run.py. Preparation imports it in
+        isolation and exercises its _receipt_paths, so a gateway that predates #44 (b29aa5a
+        admits campaign/__pycache__/p.json), declares another scope, or declares the guard but
+        does not enforce it is refused."""
+        adapter, plan, contracts = self.sources()
+        gateway = adapter / 'scripts/hcu_run.py'
+        original = gateway.read_text()
+        b29 = subprocess.run(['git', '-C', str(ROOT), 'show', 'b29aa5a:scripts/hcu_run.py'],
+                             capture_output=True, text=True)
+        changes = [
+            ('pre_44', original.replace('RECEIPT_ROOTS = ', 'OLD_ROOTS = ')),
+            ('other_dirs', original.replace("'aiter-jit-cache', '__pycache__'))", "'aiter-jit-cache'))")),
+            ('other_roots', original.replace("RECEIPT_ROOTS = ('campaign', '.local')", "RECEIPT_ROOTS = ('campaign', 'results')")),
+            ('roots_disabled', original.replace("    if not parts or parts[0] not in RECEIPT_ROOTS or path.suffix != '.json':", "    if False:")),
+            ('caches_disabled', original.replace('    if unwalked:', '    if False:')),
+            ('terminal_disabled', original.replace("        if path.name.endswith('-terminal.json'):", '        if False:')),
+            ('admits_nothing', original.replace("    terminal = path.with_name(path.stem + '-terminal.json')",
+                                                "    raise ValueError('closed')\n    terminal = path.with_name(path.stem + '-terminal.json')")),
+        ]
+        if b29.returncode == 0:
+            appended = (b29.stdout + "\nRECEIPT_ROOTS = ('campaign', '.local')\nRECEIPT_UNWALKED_DIRS = frozenset(("
+                        "'.git', '.deps', '.data', 'triton-cache', 'aiter-jit-cache', '__pycache__'))\n")
+            changes.append(('b29aa5a_with_constants_appended', appended))
+            prepare.require_receipt_scope(original.encode(), 'guarded')  # the real copy passes
+            with self.assertRaisesRegex(ValueError, 'receipt-scope guard'):
+                prepare.require_receipt_scope(b29.stdout.encode(), 'b29aa5a')
+        for change, text in changes:
+            self.assertNotEqual(text, original)
+            gateway.write_text(text)
+            git(adapter, 'commit', '-qam', 'Gateway fixture ' + change)
+            pin = git(adapter, 'rev-parse', 'HEAD')
+            bad = copy.deepcopy(plan)
+            bad['adapter_commit'] = pin
+            for config in bad['hosts'].values():
+                config['gateway']['commit'] = pin
+            write(self.root / 'plan.json', bad)
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, 'receipt-scope guard'):
+                self.prepare(adapter)
+            self.assertFalse((self.root / 'runs').exists())
+            self.assertFalse((self.root / 'allocation.json').exists())
+
     def test_explicit_author_capacity(self):
         plan, contracts = allocation(self.root)
         for capacity in (1, 2, 3):

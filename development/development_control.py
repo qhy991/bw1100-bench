@@ -6,12 +6,14 @@ import re
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.json_stream import author_diagnostic, read_json_stream
+from scripts.json_stream import author_diagnostic, read_json_stream, release_json_files
 
 
 def released(root):
-    pending = [path for top in (root / 'campaign', root / '.local') for path in top.rglob('*.json')
-               if not any(name in path.parts for name in ('triton-cache', 'aiter-jit-cache'))]
+    unwalked = []
+    pending = list(release_json_files(root, lambda path, reason: unwalked.append(reason)))
+    if unwalked:
+        return False
     seen = set()
     jobs = {}
     declared = set()

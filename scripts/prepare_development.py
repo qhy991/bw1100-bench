@@ -2,16 +2,61 @@
 """Prepare one host's new development Runs; never start an author or a GPU process."""
 from pathlib import Path
 import argparse
+import importlib.util
 import json
 import shutil
 import subprocess
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from campaign.binding import GATEWAY_FILES, clean, git, read
 from development.development_binding import ADAPTER_SCRIPTS, BUDGET, KIND, inherited_path, render_agents, render_task, validate_plan
+from scripts.json_stream import RELEASE_ROOTS, RELEASE_UNWALKED_DIRS
 from scripts.prepare_bench import clone, gateway_sources, new_json, source_identity
+
+# What the pinned gateway's _receipt_paths must refuse and admit (#44, #45 review).
+RECEIPT_REFUSED = ('campaign/__pycache__/p.json', '.data/p.json', 'native/p.json', 'campaign/x-terminal.json',
+                   *('%s/%s/p.json' % (top, cache) for top in RELEASE_ROOTS for cache in sorted(RELEASE_UNWALKED_DIRS)))
+RECEIPT_ADMITTED = ('campaign/evaluations/e/p.json', '.local/profile/p.json')
+
+
+def require_receipt_scope(gateway_source, commit):
+    """The Run executes the pinned gateway; it must refuse every receipt the checks may miss.
+
+    The source is imported as an isolated module (its main() never runs) with ROOT bound to
+    an empty temporary directory, and its own _receipt_paths is exercised, so a guard that is
+    declared but not enforced is refused like a missing one.
+    """
+    refusal = 'Pinned gateway ' + commit + ' scripts/hcu_run.py lacks the receipt-scope guard: '
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary).resolve()
+        (root / 'scripts').mkdir()
+        (root / 'scripts/hcu_run.py').write_bytes(gateway_source)
+        spec = importlib.util.spec_from_file_location('pinned_gateway', str(root / 'scripts/hcu_run.py'))
+        gateway = importlib.util.module_from_spec(spec)
+        try:
+            spec.loader.exec_module(gateway)
+        except Exception as error:
+            raise ValueError(refusal + 'it does not import: %r' % error) from error
+        if (getattr(gateway, 'RECEIPT_ROOTS', None), getattr(gateway, 'RECEIPT_UNWALKED_DIRS', None)) != (
+                RELEASE_ROOTS, RELEASE_UNWALKED_DIRS):
+            raise ValueError(refusal + 'RECEIPT_ROOTS/RECEIPT_UNWALKED_DIRS differ from the release checks\' copy')
+        gateway.ROOT = root
+        for name in RECEIPT_REFUSED:
+            try:
+                gateway._receipt_paths(name)
+            except ValueError:
+                continue
+            except Exception as error:
+                raise ValueError(refusal + '%s raised %r instead of a refusal' % (name, error)) from error
+            raise ValueError(refusal + 'it admits ' + name)
+        for name in RECEIPT_ADMITTED:
+            try:
+                gateway._receipt_paths(name)
+            except Exception as error:
+                raise ValueError(refusal + 'it refuses ' + name + ': %r' % error) from error
 
 
 def prepare(plan_path, contracts_path, disposition_path, host, output):
@@ -27,6 +72,7 @@ def prepare(plan_path, contracts_path, disposition_path, host, output):
     clean(compiler, plan['compiler'])
     clean(gateway, config['gateway']['commit'])
     gateway_files = gateway_sources(gateway, config['gateway']['commit'])
+    require_receipt_scope(gateway_files['scripts/hcu_run.py'], config['gateway']['commit'])
     selected = [row for row in plan['assignments'] if row['host'] == host]
     if output.exists() or not selected or any(Path(row['root']).exists() for row in selected):
         raise ValueError('Preparation requires a nonempty host subset and fresh output/Run roots')
