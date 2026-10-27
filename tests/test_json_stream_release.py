@@ -413,6 +413,19 @@ class StreamReleaseTests(unittest.TestCase):
         self.path.write_text('{}\n' + json.dumps({'admission_receipts': ['../outside.json']}))
         self.gates(False)
 
+    def test_a_renamed_receipt_pair_is_paired_by_job_id_in_both_checks(self):
+        """r5 STOP-hcu5: an author kept a failed profile attempt as admission-failed-x.json and
+        admission-terminal-failed-x.json. release_audit paired them by job id; released() looked
+        for admission-failed-x-terminal.json and withheld the release at author end."""
+        write(self.root / 'campaign/admission-failed-x.json', admission())
+        self.gates(False)
+        write(self.root / 'campaign/admission-terminal-failed-x.json', terminal())
+        self.gates(True)
+        write(self.root / 'campaign/admission-terminal-failed-x.json', terminal('other'))
+        self.gates(False)
+        write(self.root / 'campaign/admission-terminal-failed-x.json', terminal(after_vram='2%'))
+        self.gates(False)
+
     def test_terminals_remain_strict_matching_and_released(self):
         write(self.root / 'campaign/admission.json', admission())
         after = self.root / 'campaign/admission-terminal.json'

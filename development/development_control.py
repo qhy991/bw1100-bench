@@ -69,14 +69,10 @@ def released(root):
                     *required, 'status', 'reason', 'runtime_error_marker', 'release_observations')):
                 after = record
             else:
+                # Paired by job id below, as release_audit pairs it: an author may name a kept
+                # receipt pair by hand (r5 STOP-hcu5), so the sibling name is not the pairing.
                 job['admissions'].append(record)
-                terminal = path.with_name(path.stem + '-terminal.json')
-                if terminal.is_symlink():
-                    return False
-                try:
-                    after = json.loads(terminal.read_text())
-                except (OSError, ValueError):
-                    return False
+                continue
             if (not isinstance(after, dict) or after.get('schema') != record['schema']
                     or after.get('job_id') != job_id or any(key not in after for key in required)
                     or after.get('container_still_running') is not False
@@ -84,6 +80,8 @@ def released(root):
                 return False
             job['terminals'].append(after)
     for job in jobs.values():
+        if not job['terminals']:
+            return False
         if any(any(key not in terminal or terminal[key] != value for key, value in admission.items())
                for admission in job['admissions'] for terminal in job['terminals']):
             return False
