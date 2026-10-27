@@ -112,7 +112,7 @@ class Summary(unittest.TestCase):
 class OwnerKernelTimePass(unittest.TestCase):
     """Run the owner with its subprocesses replaced; inspect what it asks rocprof to do."""
 
-    def run_owner(self, profiled_code=0, stop_at=10**12, profiled_effect=None):
+    def run_owner(self, profiled_code=0, stop_at=10**12, profiled_effect=None, phase='search'):
         import json, runpy, shutil, subprocess, sys, tempfile
         temp = Path(tempfile.mkdtemp()); self.addCleanup(shutil.rmtree, temp)
         (temp / 'campaign/evaluations/e1').mkdir(parents=True)
@@ -141,7 +141,7 @@ class OwnerKernelTimePass(unittest.TestCase):
 
         old = (subprocess.call, sys.argv[:], sys.path[:], Path.cwd())
         subprocess.call = call
-        sys.argv = ['owner', '--candidate', 'c.py', '--id', 'e1']
+        sys.argv = ['owner', '--candidate', 'c.py', '--id', 'e1', '--phase', phase]
         sys.path.insert(0, str(temp / 'campaign'))
         try:
             with self.assertRaises(SystemExit) as stop:
@@ -190,6 +190,25 @@ class OwnerKernelTimePass(unittest.TestCase):
         code, _, outcome, _ = self.run_owner(profiled_code=1, profiled_effect=unavailable)
         self.assertIn('device runtime', outcome['kernel_time_unavailable'])
         self.assertTrue(self.stop_file.exists())
+
+    def test_confirmation_waits_for_the_card_lock_while_its_phase_admits_it(self):
+        import time
+        stop_at = int(time.time()) + 1800
+        for phase, longer in (('search', False), ('confirmation', True)):
+            with self.subTest(phase=phase):
+                _, calls, _, _ = self.run_owner(stop_at=stop_at, phase=phase)
+                [device] = [argv for argv in calls if 'scripts/hcu_run.py' in argv and 'campaign/development_device.py' in argv]
+                wait = int(device[device.index('--queue-timeout') + 1])
+                latest = float(device[device.index('--latest-start-epoch') + 1])
+                timeout = int(device[device.index('--timeout') + 1])
+                self.assertEqual(wait > 300, longer)
+                self.assertLessEqual(time.time() + wait, latest + 5)
+                # The device job ends with room for its terminal and compare before the owner stop at stop-20 s.
+                self.assertLessEqual(latest + timeout, stop_at - (150 if longer else 30))
+                [profiled] = [argv for argv in calls if any('rocprof' in part for part in argv)]
+                profiled_end = (float(profiled[profiled.index('--latest-start-epoch') + 1])
+                                + int(profiled[profiled.index('--timeout') + 1]))
+                self.assertLessEqual(profiled_end, stop_at - (150 if longer else 30))
 
     def test_too_little_time_skips_the_pass_with_its_reason(self):
         import time

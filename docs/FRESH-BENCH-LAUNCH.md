@@ -48,7 +48,7 @@ Each host entry contains:
   `control` and `successor`. Successor-only plans require only `successor`.
 - `data_root`: materialized suite `.data`, `sol_root`: pinned SOL-ExecBench source,
   `flag_gems_root`: the pinned FlagGems source used by the fixed baseline qualification.
-- `capacity_per_hcu`: explicit author concurrency from 1 to 3, and
+- `capacity_per_hcu`: explicit author concurrency from 1 to 6 (`MAX_AUTHORS_PER_HCU`), and
   `start_window_seconds`: the positive bound for admitting new authors.
 
 For example, one assignment is

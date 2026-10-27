@@ -360,7 +360,7 @@ class FreshBenchTests(unittest.TestCase):
         flags.mkdir()
         (flags / 'source').write_text('qualified fixture')
         routes['hosts']['local'] = {'gateway': {'root': str(bench), 'commit': bench_pin},
-            'image': 'sha256:' + 'f' * 64, 'home': str(self.root), 'capacity_per_hcu': 1,
+            'image': 'sha256:' + 'f' * 64, 'home': str(self.root), 'capacity_per_hcu': prepare.MAX_AUTHORS_PER_HCU,
             'start_window_seconds': 100, 'compiler_roots': {key: str(value[0]) for key, value in compilers.items()},
             'sol_root': str(sol), 'data_root': str(data), 'flag_gems_root': str(flags)}
         write(self.root / 'plan.json', frozen)
@@ -374,6 +374,14 @@ class FreshBenchTests(unittest.TestCase):
                 prepare.prepare(self.root / 'plan.json', self.root / 'routing.json', 'local', self.root / 'allocation.json')
             self.assertFalse((self.root / 'physical-runs').exists())
             git(bench, 'config', '--local', 'user.email', 'bench-test@example.invalid')
+            for capacity in (prepare.MAX_AUTHORS_PER_HCU + 1, 0, True):
+                bad = copy.deepcopy(routes)
+                bad['hosts']['local']['capacity_per_hcu'] = capacity
+                write(self.root / 'routing.json', bad)
+                with self.subTest(capacity=capacity), self.assertRaisesRegex(ValueError, 'Author capacity'):
+                    prepare.prepare(self.root / 'plan.json', self.root / 'routing.json', 'local', self.root / 'allocation.json')
+                self.assertFalse((self.root / 'physical-runs').exists())
+            write(self.root / 'routing.json', routes)
             if kind == 'rolling_bench_fresh_successor':
                 self.assertFalse((self.root / 'control').exists())
                 for host in routes['hosts']:

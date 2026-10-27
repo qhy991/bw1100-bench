@@ -1,6 +1,6 @@
 # Author concurrency and coordinator handoff
 
-`capacity_per_hcu` permits one to three author processes on each explicitly allocated HCU. The qualified HCU gateway continues to serialize device work. Author capacity does not establish physical device exclusivity.
+`capacity_per_hcu` permits one to six author processes on each explicitly allocated HCU (`MAX_AUTHORS_PER_HCU`). The qualified HCU gateway continues to serialize device work, so authors beyond the card's device-job throughput wait on its lock while their search clock runs; choose the value from the measured device-busy share and queue wait of the previous round. In a development round a search evaluation waits at most 300 s for the lock; the single owner confirmation waits as long as its phase can still admit the job and leave 120 s for its terminal receipt and compare. The independent Bench's final confirmation keeps its 300 s wait. Each author is also a model client and CPU-container user on the host. Author capacity does not establish physical device exclusivity.
 
 A live cohort needs an explicit execution-policy amendment. Keep its original allocation and Run bindings. At a published scheduler checkpoint, stop only the exact coordinator PID after checking its start ticks. Preserve its status, launch records and active controller identities. Confirm that all reservations appear exactly once in the status. If this check fails, resume the coordinator and abort the handoff.
 

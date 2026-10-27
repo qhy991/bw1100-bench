@@ -13,7 +13,7 @@ from compiler_fixture import add_catalog
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from development.development_binding import reconcile, validate_plan
+from development.development_binding import MAX_AUTHORS_PER_HCU, author_capacity_ok, reconcile, validate_plan
 from scripts import bench_queue as queue, prepare_development as prepare
 
 
@@ -81,7 +81,7 @@ class DevelopmentTests(unittest.TestCase):
             if change == 'unselected': bad['compiler'] = None
             if change == 'hcu_zero': bad['assignments'][0]['hcu'] = 0
             if change == 'host_excluded': bad['assignments'][2]['hcu'] = 1
-            if change == 'invalid_authors': bad['controls']['capacity_per_hcu'] = 4
+            if change == 'invalid_authors': bad['controls']['capacity_per_hcu'] = MAX_AUTHORS_PER_HCU + 1
             if change == 'budget': bad['controls']['search_seconds'] = 9100
             with self.subTest(change=change), self.assertRaises(ValueError):
                 validate_plan(bad, contracts)
@@ -199,9 +199,26 @@ class DevelopmentTests(unittest.TestCase):
 
     def test_explicit_author_capacity(self):
         plan, contracts = allocation(self.root)
-        for capacity in (1, 2, 3):
+        for capacity in range(1, MAX_AUTHORS_PER_HCU + 1):
             plan['controls']['capacity_per_hcu'] = capacity
             validate_plan(plan, contracts)
+
+    def test_author_capacity_bound_is_exactly_one_to_the_named_limit(self):
+        accepted = [value for value in (0, 1, 3, MAX_AUTHORS_PER_HCU, MAX_AUTHORS_PER_HCU + 1, True, 2.0, '2')
+                    if author_capacity_ok(value)]
+        self.assertEqual(accepted, [1, 3, MAX_AUTHORS_PER_HCU])
+
+    def test_queue_admits_the_named_limit_and_refuses_one_more(self):
+        rows = [dict(task='t', root=str(self.root / 't'), host='fixture', hcu=2)]
+        for capacity, accepted in ((MAX_AUTHORS_PER_HCU, True), (MAX_AUTHORS_PER_HCU + 1, False)):
+            path = self.root / f'capacity-{capacity}.json'
+            write(path, dict(kind='registered_task_development', host='fixture', start_window_seconds=1,
+                             capacity_per_hcu=capacity, runs=rows))
+            with self.subTest(capacity=capacity), self.assertRaises(Exception) as refused:
+                queue.run(self.root / f'owner-{capacity}', path)
+            # The admitted capacity gets past the capacity check and fails later on the missing Run.
+            self.assertEqual('Unsupported author capacity' in str(refused.exception), not accepted)
+            self.assertFalse((self.root / f'owner-{capacity}/LAUNCH.json').exists())
 
     def sources(self):
         adapter = self.root / 'adapter'
