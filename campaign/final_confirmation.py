@@ -39,7 +39,7 @@ def main():
             else:
                 latest=deadline['stop_at_epoch']-timeout-30
                 command=['python3','scripts/hcu_run.py','--image',intake['image'],'--device',str(plan['hcu']),
-                    '--timeout',str(timeout),'--queue-timeout','300','--latest-start-epoch',str(latest),
+                    '--timeout',str(timeout),'--queue-timeout',str(max(1,min(3600,int(latest-time.time())))),'--latest-start-epoch',str(latest),
                     '--receipt','campaign/final-confirmation/admission.json','--','env','TRITON_F32_DEFAULT=ieee',
                     'FLA_TRIL_PRECISION=ieee','AITER_JIT_DIR=/work/.local/aiter-jit-cache',
                     'TRITON_CACHE_DIR=/work/.local/triton-cache','python3','campaign/paired_wall.py',

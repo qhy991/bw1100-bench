@@ -8,6 +8,10 @@ KIND = 'registered_task_development'
 # Author processes per HCU. The gateway still runs one device job at a time per HCU, so
 # authors above the card's job throughput only wait on its lock (search clock running).
 MAX_AUTHORS_PER_HCU = 6
+
+
+def author_capacity_ok(value):
+    return type(value) is int and 1 <= value <= MAX_AUTHORS_PER_HCU
 ADAPTER_SCRIPTS = ('development_binding.py', 'development_control.py', 'development_device.py',
                    'development_evaluate.py', 'development_evaluate_owner.py', 'development_kernel_time.py', 'development_launch.py',
                    'development_prepare.py', 'development_task_source.py', 'development_stop.py', 'ralph_flow.py')
@@ -89,8 +93,7 @@ def validate_plan(plan, contracts):
         raise ValueError('Preserve the declared GLM-5.3 high author model')
     if (controls['wall_time_seconds'], controls['search_seconds'], controls['confirmation_seconds']) != (10800, 9000, 1800):
         raise ValueError('Preserve the three-hour budget including thirty-minute confirmation')
-    if (controls['token_limits'] is not None or type(controls['capacity_per_hcu']) is not int
-            or controls['capacity_per_hcu'] not in range(1, MAX_AUTHORS_PER_HCU + 1)):
+    if controls['token_limits'] is not None or not author_capacity_ok(controls['capacity_per_hcu']):
         raise ValueError(f'Declare one to {MAX_AUTHORS_PER_HCU} authors per HCU and accounting-only tokens')
     if controls['reference_access'] != 'known_kernel_reproduction_with_declared_development_incumbent':
         raise ValueError('Declare the canonical starter and any inherited development material')
