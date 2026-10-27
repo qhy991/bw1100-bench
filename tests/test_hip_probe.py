@@ -79,6 +79,9 @@ class NativeProbeTests(unittest.TestCase):
         stage = Path(receipt_name).name.split('-')[0]
         if self.failure == 'missing_admission':
             return 0
+        if self.failure == 'lock_wait':
+            kwargs['stdout'].write('RuntimeError: ' + development_stop.LOCK_WAIT_TIMEOUT + '\n')
+            return 1
         command = argv[argv.index('--') + 1:]
         receipt = self.root / receipt_name
         before = dict(schema=probe.ADMISSION, job_id='fixture-' + stage,
@@ -221,6 +224,17 @@ class NativeProbeTests(unittest.TestCase):
                     self.assertTrue(development_stop.stopped(self.bound))
                 stop.unlink()
                 self.failure = self.damage = None
+
+    def test_a_lock_wait_timeout_fails_the_probe_without_stopping_the_card(self):
+        self.bound.update(compiler=self.bound['compiler_commit'],
+                          batch_stop_file=str(self.root / 'STOP-hcu4.json'))
+        self.failure = 'lock_wait'
+        with patch.dict(sys.modules, {'campaign.development_stop': development_stop}):
+            result = self.run_probe('lock-wait', kind='development')
+        self.failure = None
+        self.assertEqual(result['status'], 'failed')
+        self.assertIn('queue timeout', result['reason'])
+        self.assertFalse(Path(self.bound['batch_stop_file']).exists())
 
     def test_released_native_candidate_or_late_failure_does_not_halt_development(self):
         self.bound.update(compiler=self.bound['compiler_commit'],
