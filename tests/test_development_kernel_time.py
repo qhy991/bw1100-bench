@@ -205,6 +205,10 @@ class OwnerKernelTimePass(unittest.TestCase):
                 self.assertLessEqual(time.time() + wait, latest + 5)
                 # The device job ends with room for its terminal and compare before the owner stop at stop-20 s.
                 self.assertLessEqual(latest + timeout, stop_at - (150 if longer else 30))
+                [profiled] = [argv for argv in calls if any('rocprof' in part for part in argv)]
+                profiled_end = (float(profiled[profiled.index('--latest-start-epoch') + 1])
+                                + int(profiled[profiled.index('--timeout') + 1]))
+                self.assertLessEqual(profiled_end, stop_at - (150 if longer else 30))
 
     def test_too_little_time_skips_the_pass_with_its_reason(self):
         import time
