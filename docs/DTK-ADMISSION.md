@@ -38,11 +38,18 @@ opening every directory below the repository root without following a symlink, t
 creating the file exclusively in the last one. A directory swapped for a symlink in
 between makes the gateway fail instead of writing elsewhere.
 
-The release checks fail closed inside `campaign/` and `.local/`. They read a `.json`
-file below a cache directory there too, because a gateway pinned before this guard could
-write one. A symlinked or unreadable directory there withholds the release. They keep
-their copy of the scope in `scripts/json_stream.py`; a test holds it equal to the
-gateway copies, and preparation refuses a pinned gateway whose `hcu_run.py` lacks it.
+The release checks fail closed inside `campaign/` and `.local/`. A gateway pinned before
+this guard could write a receipt below a cache directory there, so the checks read each
+`.json` file below one whose bytes name the admission schema or `admission_receipts`.
+They parse it strictly and withhold the release if it is partial or unreleased. Other cache
+files, such as a Triton compile killed mid-write, are ignored. An unreadable directory
+withholds the release. A symlinked directory is never followed. It withholds the release
+only if its target lies inside the Run root, outside what the walk already reads, and holds
+a receipt-shaped file. Any other link, such as a venv `lib64` or an author's `.local/latest`,
+is reported as a note. The checks keep their copy of the scope in `scripts/json_stream.py`.
+Preparation imports the pinned gateway's `hcu_run.py` in isolation and refuses it unless its
+`_receipt_paths` refuses cache, out-of-scope and `-terminal.json` receipts and admits
+in-scope ones.
 
 The output path is create-only. The initial `<name>.json` records admission,
 source command, image, device and deadline; `<name>-terminal.json` records exit

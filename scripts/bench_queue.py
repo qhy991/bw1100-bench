@@ -11,7 +11,7 @@ def read(path):return json.loads(path.read_text())
 def atomic(path,value):
  tmp=path.with_suffix('.tmp');tmp.write_text(json.dumps(value,indent=2));tmp.replace(path)
 def release_audit(root, preexisting_json=()):
- jobs={};issues=[];author_files={};declared=set();seen=set();preexisting=set(preexisting_json)
+ jobs={};issues=[];notes=[];author_files={};declared=set();seen=set();preexisting=set(preexisting_json)
  def consume(p):
   if str(p.relative_to(root)) in preexisting or p in seen:return
   seen.add(p)
@@ -35,7 +35,8 @@ def release_audit(root, preexisting_json=()):
     if all(k in d for k in required):row['terminals'].append(d)
     else:issues.append({'file':str(p.relative_to(root)),'job_id':jid,'reason':'partial_terminal'})
    else:row['admissions'].append(d)
- for p in release_json_files(root,lambda file,reason:issues.append({'file':file,'reason':reason}),whole_root=True):consume(p)
+ for p in release_json_files(root,lambda file,reason:issues.append({'file':file,'reason':reason}),
+                            lambda file,reason:notes.append({'file':file,'reason':reason}),whole_root=True):consume(p)
  checked=set()
  while declared-checked:
   ref=sorted(declared-checked)[0];checked.add(ref)
@@ -62,7 +63,7 @@ def release_audit(root, preexisting_json=()):
   if any(any(k not in terminal or terminal[k]!=value for k,value in admission.items())
          for admission in row['admissions'] for terminal in row['terminals']):
    issues.append({'job_id':jid,'reason':'terminal_admission_mismatch'})
- return {'jobs':list(jobs),'issues':issues,'author_diagnostic_files':sorted(author_files),'release_records_clean':not issues}
+ return {'jobs':list(jobs),'issues':issues,'author_diagnostic_files':sorted(author_files),'notes':notes,'release_records_clean':not issues}
 
 def done_observation(path):
  if not path.exists():return None,'missing_DONE'

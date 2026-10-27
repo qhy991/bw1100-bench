@@ -1,5 +1,4 @@
 """Read every complete top-level JSON value; never accept a partial prefix."""
-import ast
 import json
 import os
 from pathlib import Path
@@ -25,20 +24,33 @@ def read_json_stream(path):
 
 GATEWAY_SCHEMA = 'bw1100-bench.hcu-admission.v1'
 # The release checks' copy of where the gateway admits receipts (scripts/hcu_run.py
-# RECEIPT_ROOTS / RECEIPT_UNWALKED_DIRS, #44). Both checks read every .json file under
-# RELEASE_ROOTS, including inside RELEASE_UNWALKED_DIRS there: a gateway pinned before #44
-# could write a receipt into campaign/__pycache__ (#45 review). They prune
-# RELEASE_UNWALKED_DIRS only outside the scope, where no gateway since #44 writes.
+# RECEIPT_ROOTS / RECEIPT_UNWALKED_DIRS, #44). Outside RELEASE_ROOTS, release_audit prunes
+# RELEASE_UNWALKED_DIRS. Inside, both checks fail closed without reading cache bytes as
+# records: a gateway pinned before #44 could write a receipt into campaign/__pycache__,
+# while Triton and AITER leave partial or binary .json files under .local (#45 review).
 RELEASE_ROOTS = ('campaign', '.local')
 RELEASE_UNWALKED_DIRS = frozenset(('.git', '.deps', '.data', 'triton-cache', 'aiter-jit-cache', '__pycache__'))
+_RECEIPT_MARKERS = (GATEWAY_SCHEMA.encode(), b'admission_receipts')
 
 
-def release_json_files(root, issue, whole_root=False):
-    """Yield every .json file a release check reads, reporting what it could not walk.
+def receipt_shaped(path):
+    """True when a file's bytes could be or hide a gateway record (as author_diagnostic
+    reads them); an unreadable file counts as one, since its bytes cannot be ruled out."""
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return True
+    return any(marker in data for marker in _RECEIPT_MARKERS)
 
-    Inside RELEASE_ROOTS nothing is skipped: a symlinked scope root or directory and an
-    unreadable directory are passed to issue(relative_path, reason), and the caller must
-    withhold the release. With whole_root the rest of the tree is walked as before, pruning
+
+def release_json_files(root, issue, note=lambda path, reason: None, whole_root=False):
+    """Yield every .json file a release check must read as a record.
+
+    Inside RELEASE_ROOTS every directory is walked. Below a RELEASE_UNWALKED_DIRS component
+    there, only a regular file that receipt_shaped admits is yielded; any other cache file
+    is ignored whatever its bytes. An unreadable directory is issue(relative, reason): the
+    caller withholds the release. A symlinked directory is never followed: see
+    _symlinked_directory. With whole_root the rest of the tree is walked as before, pruning
     RELEASE_UNWALKED_DIRS and reporting unreadable directories.
     """
     def relative(path):
@@ -47,56 +59,75 @@ def release_json_files(root, issue, whole_root=False):
     def unreadable(error):
         issue(relative(error.filename), 'unreadable_directory')
 
-    tops = [root]
-    if not whole_root:
-        tops = []
-        for name in RELEASE_ROOTS:
-            if (root / name).is_symlink():
-                issue(name, 'symlink_directory_not_followed')
-            elif os.path.lexists(str(root / name)):
-                tops.append(root / name)
+    tops = [root] if whole_root else []
+    for name in () if whole_root else RELEASE_ROOTS:
+        if (root / name).is_symlink():
+            _symlinked_directory(root, root / name, issue, note)
+        elif os.path.isdir(str(root / name)):
+            tops.append(root / name)
     for top in tops:
         for directory, dirs, files in os.walk(str(top), onerror=unreadable):
             here = Path(directory)
-            inside = here.relative_to(root).parts[:1]
+            parts = here.relative_to(root).parts
+            in_scope = bool(parts) and parts[0] in RELEASE_ROOTS
+            in_cache = in_scope and not RELEASE_UNWALKED_DIRS.isdisjoint(parts[1:])
             kept = []
             for name in dirs:
-                if (inside or (name,))[0] not in RELEASE_ROOTS:
+                child = here / name
+                if not (in_scope or (not parts and name in RELEASE_ROOTS)):
                     if name not in RELEASE_UNWALKED_DIRS:
-                        kept.append(name)
-                elif (here / name).is_symlink():
-                    issue(relative(here / name), 'symlink_directory_not_followed')
-                else:
+                        kept.append(name)  # outside the scope: unchanged since #44
+                elif not child.is_symlink():
                     kept.append(name)
+                elif not (in_cache or name in RELEASE_UNWALKED_DIRS):
+                    _symlinked_directory(root, child, issue, note)
+                # A symlink at or below a cache directory is ignored, like the cache.
             dirs[:] = kept
             for name in files:
-                if name.endswith('.json'):
-                    yield here / name
+                path = here / name
+                if not name.endswith('.json'):
+                    continue
+                if not in_cache:
+                    yield path
+                elif not path.is_symlink() and receipt_shaped(path):
+                    yield path
 
 
-def declared_receipt_scope(source):
-    """(RECEIPT_ROOTS, RECEIPT_UNWALKED_DIRS) a gateway's hcu_run.py source declares.
+def _symlinked_directory(root, link, issue, note):
+    """Judge a symlinked directory under campaign/ or .local/ outside the caches, unfollowed.
 
-    None when the gateway has no receipt-scope guard (any gateway before #44). Preparation
-    refuses a pinned gateway whose scope is not this module's RELEASE_* pair.
+    A gateway since #44 resolves the receipt path and refuses one outside the scope, and
+    creates it without following a symlink; preparation refuses an older gateway. A receipt
+    could hide behind the link only where its target is inside the Run root yet outside
+    what the walk already reads. So the link withholds the release only if that part of its
+    target holds a receipt-shaped .json file (or cannot be read); otherwise, for example a
+    venv lib64 -> lib or an author's .local/latest, it is only a note.
     """
-    values = {}
-    for node in ast.parse(source).body:
-        if (isinstance(node, ast.Assign) and len(node.targets) == 1
-                and isinstance(node.targets[0], ast.Name)
-                and node.targets[0].id in ('RECEIPT_ROOTS', 'RECEIPT_UNWALKED_DIRS')):
-            value = node.value
-            try:
-                if (isinstance(value, ast.Call) and isinstance(value.func, ast.Name)
-                        and value.func.id == 'frozenset' and len(value.args) == 1 and not value.keywords):
-                    values[node.targets[0].id] = frozenset(ast.literal_eval(value.args[0]))
-                else:
-                    values[node.targets[0].id] = ast.literal_eval(value)
-            except ValueError:
-                return None
-    if set(values) != {'RECEIPT_ROOTS', 'RECEIPT_UNWALKED_DIRS'}:
-        return None
-    return values['RECEIPT_ROOTS'], values['RECEIPT_UNWALKED_DIRS']
+    relative = os.path.relpath(str(link), str(root))
+    root_real = root.resolve()
+    pending, visited = [link], set()
+    while pending:
+        try:
+            target = pending.pop().resolve(strict=True)
+            parts = target.relative_to(root_real).parts
+        except (OSError, RuntimeError, ValueError):
+            continue  # dangling, looping or outside the Run root: no receipt is written there
+        if (parts and parts[0] in RELEASE_ROOTS) or target in visited or not target.is_dir():
+            continue  # already read directly by the walk
+        visited.add(target)
+        failed = []
+        for directory, dirs, files in os.walk(str(target), onerror=failed.append):
+            here = Path(directory)
+            pending.extend(here / name for name in dirs if (here / name).is_symlink())
+            dirs[:] = [name for name in dirs if not (here / name).is_symlink()
+                       and not (here == root_real and name in RELEASE_ROOTS)]
+            if any(name.endswith('.json') and not (here / name).is_symlink()
+                   and receipt_shaped(here / name) for name in files):
+                failed.append(None)
+        if failed:
+            issue(relative, 'receipt_behind_symlinked_directory')
+            return
+    note(relative, 'symlink_directory_not_followed')
 
 
 _JOB_ID = re.compile(r'"job_id"\s*:\s*"([^"]+)"')
