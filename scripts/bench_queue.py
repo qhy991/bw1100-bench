@@ -4,7 +4,7 @@ import argparse,collections,fcntl,json,os,subprocess,sys,time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.json_stream import author_diagnostic, read_json_stream, release_json_files
 from scripts.release_review import reviewed_logs
-from scripts.queue_handoff import UNKNOWN_EXIT, restore, validate_handoff
+from scripts.queue_handoff import MAX_AUTHORS_PER_HCU, UNKNOWN_EXIT, restore, validate_handoff
 ROOT = None
 
 def read(path):return json.loads(path.read_text())
@@ -99,7 +99,7 @@ def run(root, allocation, handoff_path=None, release_review_path=None):
   def run_id(row):return Path(row[identity_field]).name
   hcus=sorted({r['hcu'] for r in pending});capacity=handoff['capacity_per_hcu'] if handoff else spec['capacity_per_hcu']
   if not pending or len({r[identity_field] for r in pending})!=len(pending) or len({run_id(r) for r in pending})!=len(pending):raise ValueError('Expected unique nonempty host allocation')
-  if type(capacity) is not int or not 1<=capacity<=3 or any(h not in range(1,7) for h in hcus):raise ValueError('Unsupported author capacity or HCU')
+  if type(capacity) is not int or not 1<=capacity<=MAX_AUTHORS_PER_HCU or any(h not in range(1,7) for h in hcus):raise ValueError('Unsupported author capacity or HCU')
   if type(spec['start_window_seconds']) is not int or spec['start_window_seconds']<=0:raise ValueError('A positive frozen start window is required')
   if any(r['host']!=spec['host'] for r in pending):raise ValueError('Foreign host allocation')
   for r in pending:

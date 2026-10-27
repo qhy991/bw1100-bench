@@ -10,6 +10,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from development.development_binding import MAX_AUTHORS_PER_HCU
 from campaign.binding import GATEWAY_FILES, clean, git, plan_conditions, read, validate_plan, validate_routing
 
 def gateway_sources(root, commit):
@@ -68,8 +69,8 @@ def prepare(plan_path, routing_path, host, output):
         raise ValueError('Use the qualified immutable image ID')
     if type(config['start_window_seconds']) is not int or config['start_window_seconds'] <= 0:
         raise ValueError('A positive host start window is required')
-    if not 1 <= config['capacity_per_hcu'] <= 3:
-        raise ValueError('Author capacity must be explicit and at most three per HCU')
+    if not 1 <= config['capacity_per_hcu'] <= MAX_AUTHORS_PER_HCU:
+        raise ValueError(f'Author capacity must be explicit and at most {MAX_AUTHORS_PER_HCU} per HCU')
     for condition in plan_conditions(plan):
         clean(Path(config['compiler_roots'][condition]), plan['bindings'][condition]['commit'])
     sol = Path(config['sol_root'])

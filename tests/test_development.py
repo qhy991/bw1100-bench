@@ -81,7 +81,7 @@ class DevelopmentTests(unittest.TestCase):
             if change == 'unselected': bad['compiler'] = None
             if change == 'hcu_zero': bad['assignments'][0]['hcu'] = 0
             if change == 'host_excluded': bad['assignments'][2]['hcu'] = 1
-            if change == 'invalid_authors': bad['controls']['capacity_per_hcu'] = 4
+            if change == 'invalid_authors': bad['controls']['capacity_per_hcu'] = queue.MAX_AUTHORS_PER_HCU + 1
             if change == 'budget': bad['controls']['search_seconds'] = 9100
             with self.subTest(change=change), self.assertRaises(ValueError):
                 validate_plan(bad, contracts)
@@ -199,9 +199,18 @@ class DevelopmentTests(unittest.TestCase):
 
     def test_explicit_author_capacity(self):
         plan, contracts = allocation(self.root)
-        for capacity in (1, 2, 3):
+        for capacity in range(1, queue.MAX_AUTHORS_PER_HCU + 1):
             plan['controls']['capacity_per_hcu'] = capacity
             validate_plan(plan, contracts)
+
+    def test_queue_refuses_capacity_above_the_named_author_limit(self):
+        rows = [dict(task='t', root=str(self.root / 't'), host='fixture', hcu=2)]
+        path = self.root / 'over-capacity.json'
+        write(path, dict(kind='registered_task_development', host='fixture', start_window_seconds=1,
+                         capacity_per_hcu=queue.MAX_AUTHORS_PER_HCU + 1, runs=rows))
+        with self.assertRaisesRegex(ValueError, 'Unsupported author capacity'):
+            queue.run(self.root / 'owner-over', path)
+        self.assertFalse((self.root / 'owner-over/LAUNCH.json').exists())
 
     def sources(self):
         adapter = self.root / 'adapter'
