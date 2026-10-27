@@ -11,7 +11,15 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from campaign.binding import GATEWAY_FILES, clean, git, read
 from development.development_binding import ADAPTER_SCRIPTS, BUDGET, KIND, inherited_path, render_agents, render_task, validate_plan
+from scripts.json_stream import RELEASE_ROOTS, RELEASE_UNWALKED_DIRS, declared_receipt_scope
 from scripts.prepare_bench import clone, gateway_sources, new_json, source_identity
+
+
+def require_receipt_scope(gateway_source, commit):
+    """The Run executes the pinned gateway; the release checks read only where it may write (#44)."""
+    if declared_receipt_scope(gateway_source.decode()) != (RELEASE_ROOTS, RELEASE_UNWALKED_DIRS):
+        raise ValueError('Pinned gateway ' + commit + ' scripts/hcu_run.py lacks the receipt-scope guard '
+                         '(RECEIPT_ROOTS, RECEIPT_UNWALKED_DIRS) equal to the release checks\' copy')
 
 
 def prepare(plan_path, contracts_path, disposition_path, host, output):
@@ -27,6 +35,7 @@ def prepare(plan_path, contracts_path, disposition_path, host, output):
     clean(compiler, plan['compiler'])
     clean(gateway, config['gateway']['commit'])
     gateway_files = gateway_sources(gateway, config['gateway']['commit'])
+    require_receipt_scope(gateway_files['scripts/hcu_run.py'], config['gateway']['commit'])
     selected = [row for row in plan['assignments'] if row['host'] == host]
     if output.exists() or not selected or any(Path(row['root']).exists() for row in selected):
         raise ValueError('Preparation requires a nonempty host subset and fresh output/Run roots')

@@ -2,7 +2,7 @@
 from pathlib import Path
 import argparse,collections,fcntl,json,os,subprocess,sys,time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.json_stream import RELEASE_UNWALKED_DIRS, author_diagnostic, read_json_stream
+from scripts.json_stream import author_diagnostic, read_json_stream, release_json_files
 from scripts.release_review import reviewed_logs
 from scripts.queue_handoff import UNKNOWN_EXIT, restore, validate_handoff
 ROOT = None
@@ -35,11 +35,7 @@ def release_audit(root, preexisting_json=()):
     if all(k in d for k in required):row['terminals'].append(d)
     else:issues.append({'file':str(p.relative_to(root)),'job_id':jid,'reason':'partial_terminal'})
    else:row['admissions'].append(d)
- def walk_error(error):issues.append({'file':str(error.filename),'reason':'unreadable_directory'})
- for directory,dirs,files in os.walk(root,onerror=walk_error):
-  dirs[:]=[x for x in dirs if x not in RELEASE_UNWALKED_DIRS]
-  for name in files:
-   if name.endswith('.json'):consume(Path(directory)/name)
+ for p in release_json_files(root,lambda file,reason:issues.append({'file':file,'reason':reason}),whole_root=True):consume(p)
  checked=set()
  while declared-checked:
   ref=sorted(declared-checked)[0];checked.add(ref)

@@ -15,7 +15,8 @@ LOCK_DIR = Path.home() / '.local/state/bw1100-bench'
 # Where a receipt may be written: the only places both release checks
 # (development_control.released and bench_queue.release_audit) read it, so a gateway
 # killed before its terminal can never be certified released (#44). The checks keep
-# their copy in scripts/json_stream.py; tests/test_json_stream_release.py holds the two equal.
+# their copy in scripts/json_stream.py; tests/test_json_stream_release.py holds the two
+# equal, and preparation refuses a pinned gateway whose copy differs or is absent.
 RECEIPT_ROOTS = ('campaign', '.local')
 RECEIPT_UNWALKED_DIRS = frozenset(('.git', '.deps', '.data', 'triton-cache', 'aiter-jit-cache', '__pycache__'))
 
@@ -34,26 +35,62 @@ def _kfd_visible():
                           stderr=subprocess.DEVNULL, timeout=10).returncode == 0
 
 
-def _write_new(path, value):
-    with path.open('x') as stream:
-        json.dump(value, stream, indent=2)
-        stream.write('\n')
-    os.chmod(str(path), 0o600)
-
-
-def _receipt_paths(name):
+def _scope_parts(path):
+    """The resolved receipt path's components below ROOT, refused outside the receipt scope."""
     root = ROOT.resolve()
-    path = (root / name).resolve()
     if os.path.commonpath((str(root), str(path))) != str(root):
         raise ValueError('receipt must stay inside the repository')
     parts = path.relative_to(root).parts
     if not parts or parts[0] not in RECEIPT_ROOTS or path.suffix != '.json':
         raise ValueError('receipt must be a .json file under campaign/ or .local/, where the '
-                         'release checks read it: %s resolves to %s' % (name, '/'.join(parts)))
+                         'release checks read it: %s' % '/'.join(parts))
     unwalked = sorted(RECEIPT_UNWALKED_DIRS.intersection(parts[:-1]))
     if unwalked:
-        raise ValueError('receipt must not be under %s, which the release checks skip: '
-                         '%s resolves to %s' % (', '.join(unwalked), name, '/'.join(parts)))
+        raise ValueError('receipt must not be under %s, which the release checks skip: %s'
+                         % (', '.join(unwalked), '/'.join(parts)))
+    return root, parts
+
+
+def _write_receipt(path, value):
+    """Create a receipt, re-checking its scope at the moment of creation (#45 review).
+
+    The lock wait can last minutes. A directory swapped for a symlink in that time must not
+    move the receipt where the release checks do not read it, inside or outside the
+    repository. Every directory below ROOT is opened without following a symlink and the
+    file is created exclusively relative to the last one, so a swapped component fails the
+    open instead of redirecting it.
+    """
+    root, parts = _scope_parts(path)
+    directory = os.open(str(root), os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for index, part in enumerate(parts[:-1]):
+            try:
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+            except OSError as error:
+                raise ValueError('receipt directory %s is no longer a plain directory: %s'
+                                 % ('/'.join(parts[:index + 1]), error.strerror)) from error
+            os.close(directory)
+            directory = child
+        created = os.open(parts[-1], os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                          0o600, dir_fd=directory)
+    finally:
+        os.close(directory)
+    os.fchmod(created, 0o600)
+    with os.fdopen(created, 'w') as stream:
+        json.dump(value, stream, indent=2)
+        stream.write('\n')
+
+
+def _receipt_paths(name):
+    path = (ROOT.resolve() / name).resolve()
+    try:
+        _scope_parts(path)
+        if path.name.endswith('-terminal.json'):
+            # The checks read such a file as a terminal and never look for its own terminal.
+            raise ValueError('receipt must not end in -terminal.json, which the release checks '
+                             'read as a terminal: %s' % path.name)
+    except ValueError as error:
+        raise ValueError('%s (from --receipt %s)' % (error, name)) from None
     terminal = path.with_name(path.stem + '-terminal.json')
     if path.exists() or terminal.exists():
         raise FileExistsError('receipt path already exists')
@@ -127,7 +164,7 @@ def main():
             'container_timeout_s': child_timeout,
             'started_at': started,
         }
-        _write_new(receipt, admission)
+        _write_receipt(receipt, admission)
         bootstrap = (
             'source /opt/dtk/env.sh; '
             'export LD_LIBRARY_PATH="/opt/hyhal/lib:${LD_LIBRARY_PATH:-}"; '
@@ -169,7 +206,7 @@ def main():
             status=('completed' if exit_code == 0 and after_vram == '0%'
                     and not after_kfd and not container_live else 'not_qualified'),
         )
-        _write_new(terminal, terminal_doc)
+        _write_receipt(terminal, terminal_doc)
         print(json.dumps({'job_id': job_id, 'status': terminal_doc['status'],
                           'exit_code': exit_code}), flush=True)
         return 0 if terminal_doc['status'] == 'completed' else exit_code or 75

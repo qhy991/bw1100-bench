@@ -1,5 +1,8 @@
 """Read every complete top-level JSON value; never accept a partial prefix."""
+import ast
 import json
+import os
+from pathlib import Path
 import re
 
 
@@ -22,10 +25,80 @@ def read_json_stream(path):
 
 GATEWAY_SCHEMA = 'bw1100-bench.hcu-admission.v1'
 # The release checks' copy of where the gateway admits receipts (scripts/hcu_run.py
-# RECEIPT_ROOTS / RECEIPT_UNWALKED_DIRS, #44). released() walks RELEASE_ROOTS; both it and
-# release_audit skip exactly RELEASE_UNWALKED_DIRS, where the gateway refuses a receipt.
+# RECEIPT_ROOTS / RECEIPT_UNWALKED_DIRS, #44). Both checks read every .json file under
+# RELEASE_ROOTS, including inside RELEASE_UNWALKED_DIRS there: a gateway pinned before #44
+# could write a receipt into campaign/__pycache__ (#45 review). They prune
+# RELEASE_UNWALKED_DIRS only outside the scope, where no gateway since #44 writes.
 RELEASE_ROOTS = ('campaign', '.local')
 RELEASE_UNWALKED_DIRS = frozenset(('.git', '.deps', '.data', 'triton-cache', 'aiter-jit-cache', '__pycache__'))
+
+
+def release_json_files(root, issue, whole_root=False):
+    """Yield every .json file a release check reads, reporting what it could not walk.
+
+    Inside RELEASE_ROOTS nothing is skipped: a symlinked scope root or directory and an
+    unreadable directory are passed to issue(relative_path, reason), and the caller must
+    withhold the release. With whole_root the rest of the tree is walked as before, pruning
+    RELEASE_UNWALKED_DIRS and reporting unreadable directories.
+    """
+    def relative(path):
+        return os.path.relpath(str(path), str(root))
+
+    def unreadable(error):
+        issue(relative(error.filename), 'unreadable_directory')
+
+    tops = [root]
+    if not whole_root:
+        tops = []
+        for name in RELEASE_ROOTS:
+            if (root / name).is_symlink():
+                issue(name, 'symlink_directory_not_followed')
+            elif os.path.lexists(str(root / name)):
+                tops.append(root / name)
+    for top in tops:
+        for directory, dirs, files in os.walk(str(top), onerror=unreadable):
+            here = Path(directory)
+            inside = here.relative_to(root).parts[:1]
+            kept = []
+            for name in dirs:
+                if (inside or (name,))[0] not in RELEASE_ROOTS:
+                    if name not in RELEASE_UNWALKED_DIRS:
+                        kept.append(name)
+                elif (here / name).is_symlink():
+                    issue(relative(here / name), 'symlink_directory_not_followed')
+                else:
+                    kept.append(name)
+            dirs[:] = kept
+            for name in files:
+                if name.endswith('.json'):
+                    yield here / name
+
+
+def declared_receipt_scope(source):
+    """(RECEIPT_ROOTS, RECEIPT_UNWALKED_DIRS) a gateway's hcu_run.py source declares.
+
+    None when the gateway has no receipt-scope guard (any gateway before #44). Preparation
+    refuses a pinned gateway whose scope is not this module's RELEASE_* pair.
+    """
+    values = {}
+    for node in ast.parse(source).body:
+        if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and node.targets[0].id in ('RECEIPT_ROOTS', 'RECEIPT_UNWALKED_DIRS')):
+            value = node.value
+            try:
+                if (isinstance(value, ast.Call) and isinstance(value.func, ast.Name)
+                        and value.func.id == 'frozenset' and len(value.args) == 1 and not value.keywords):
+                    values[node.targets[0].id] = frozenset(ast.literal_eval(value.args[0]))
+                else:
+                    values[node.targets[0].id] = ast.literal_eval(value)
+            except ValueError:
+                return None
+    if set(values) != {'RECEIPT_ROOTS', 'RECEIPT_UNWALKED_DIRS'}:
+        return None
+    return values['RECEIPT_ROOTS'], values['RECEIPT_UNWALKED_DIRS']
+
+
 _JOB_ID = re.compile(r'"job_id"\s*:\s*"([^"]+)"')
 
 

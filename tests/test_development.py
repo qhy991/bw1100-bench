@@ -155,6 +155,35 @@ class DevelopmentTests(unittest.TestCase):
         self.assertEqual(list((run / 'campaign/inherited').iterdir()), [])
         self.assertEqual(reconcile(run)['case_ids'], CASES)
 
+    def test_a_pinned_gateway_without_the_receipt_scope_guard_prepares_no_run(self):
+        """#45 review: a Run executes the pinned gateway's hcu_run.py. One that predates #44
+        (b29aa5a admits campaign/__pycache__/p.json) or declares another scope is refused."""
+        adapter, plan, contracts = self.sources()
+        gateway = adapter / 'scripts/hcu_run.py'
+        original = gateway.read_text()
+        for change, text in (
+                ('pre_44', original.replace('RECEIPT_ROOTS = ', 'OLD_ROOTS = ')),
+                ('other_dirs', original.replace("'aiter-jit-cache', '__pycache__'))", "'aiter-jit-cache'))")),
+                ('other_roots', original.replace("RECEIPT_ROOTS = ('campaign', '.local')", "RECEIPT_ROOTS = ('campaign', 'results')"))):
+            self.assertNotEqual(text, original)
+            gateway.write_text(text)
+            git(adapter, 'commit', '-qam', 'Gateway fixture ' + change)
+            pin = git(adapter, 'rev-parse', 'HEAD')
+            bad = copy.deepcopy(plan)
+            bad['adapter_commit'] = pin
+            for config in bad['hosts'].values():
+                config['gateway']['commit'] = pin
+            write(self.root / 'plan.json', bad)
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, 'receipt-scope guard'):
+                self.prepare(adapter)
+            self.assertFalse((self.root / 'runs').exists())
+            self.assertFalse((self.root / 'allocation.json').exists())
+        released = subprocess.run(['git', '-C', str(ROOT), 'show', 'b29aa5a:scripts/hcu_run.py'],
+                                  capture_output=True)
+        if released.returncode == 0:
+            with self.assertRaisesRegex(ValueError, 'receipt-scope guard'):
+                prepare.require_receipt_scope(released.stdout, 'b29aa5a')
+
     def test_explicit_author_capacity(self):
         plan, contracts = allocation(self.root)
         for capacity in (1, 2, 3):
