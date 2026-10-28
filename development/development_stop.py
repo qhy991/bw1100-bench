@@ -45,6 +45,33 @@ def lock_wait_timed_out(folder, receipt='admission.json', log_name='device.log')
     return LOCK_WAIT_TIMEOUT in log
 
 
+# Refusals scripts/hcu_run.py raises before it writes the admission receipt and without writing
+# a STOP of its own: nothing was admitted, so there is no release to observe.
+PRE_ADMISSION_REFUSALS = (
+    LOCK_WAIT_TIMEOUT,
+    'another local bw1100-bench job holds this HCU lock',
+    'experiment owner stopped new GPU admissions',
+    'GPU admission window expired before device execution',
+    'selected HCU is not idle by observed VRAM/KFD check',
+)
+
+
+def refused_before_admission(folder, receipt='admission.json', log_name='device.log'):
+    """The gateway refusal in log_name when neither receipt nor its terminal exists, else None."""
+    terminal = folder / (Path(receipt).stem + '-terminal.json')
+    if (folder / receipt).exists() or terminal.exists():
+        return None
+    try:
+        log = (folder / log_name).read_text(errors='replace')
+    except OSError:
+        return None
+    # The refusal is the gateway's own last word. Container output is printed before the
+    # terminal receipt, so a string an author's command echoed cannot be the final line.
+    last = next((line.strip() for line in reversed(log.splitlines()) if line.strip()), '')
+    return next((reason for reason in PRE_ADMISSION_REFUSALS
+                 if last == 'RuntimeError: ' + reason), None)
+
+
 def device_failure_is_infrastructure(folder, receipt='admission.json', log_name='device.log'):
     """Candidate compilation/numerics failures remain candidate evidence."""
     if lock_wait_timed_out(folder, receipt, log_name):
