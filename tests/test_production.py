@@ -1,4 +1,5 @@
-"""Production contract tests do not admit or execute a GPU."""
+import contextlib
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -6,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -100,6 +102,47 @@ class CatalogTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'native/reference'):
                 candidate_module(path)
 
+    def test_missing_torch_is_a_blocked_prerequisite(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'weight.safetensors').touch()
+            (root / 'model.safetensors.index.json').write_text(json.dumps(
+                {'weight_map': {'lm_head.weight': 'weight.safetensors'}}))
+            output = root / 'result.json'
+            result = self.cli('production', 'check', '--task', 'glm53-lmhead', '--model', str(root),
+                              '--candidate', str(root / 'not-imported.py'), '--output', str(output))
+            self.assertEqual(result.returncode, 2, result.stderr)
+            report = json.loads(output.read_text())
+            self.assertEqual(report['status'], 'blocked')
+            self.assertEqual(report['stage'], 'runtime_admission')
+            self.assertFalse(report['device_check_started'])
+
+    def test_failed_checks_are_distinct_from_blocked_prerequisites(self):
+        from production import runner, lmhead
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name, stage, error, expected, started in (
+                ('candidate', 'candidate_load', ValueError('invalid candidate'), 'failed', False),
+                ('native', 'native_replay', catalog.PrerequisiteError('missing patch'), 'blocked', True),
+                ('output', 'candidate_checks', ValueError('output differs'), 'failed', True),
+            ):
+                output = root / (name + '.json')
+                args = ['check', '--task', 'glm53-lmhead', '--candidate', str(root / 'candidate.py'),
+                        '--model', str(root), '--output', str(output)]
+                with self.subTest(name=name), contextlib.redirect_stdout(io.StringIO()), \
+                        patch.object(catalog, 'audit', return_value={}), \
+                        patch.object(runner, 'runtime', return_value={}), \
+                        patch.object(runner, 'candidate_module', side_effect=error if name == 'candidate' else None,
+                                     return_value=SimpleNamespace()), \
+                        patch.object(lmhead, 'cases', side_effect=error if name == 'native' else None,
+                                     return_value=[]), \
+                        patch.object(runner, 'verify_calls', side_effect=error if name == 'output' else None):
+                    self.assertEqual(runner.main(args), 2)
+                report = json.loads(output.read_text())
+                self.assertEqual(report['status'], expected)
+                self.assertEqual(report['stage'], stage)
+                self.assertEqual(report['device_check_started'], started)
+
 
 @unittest.skipIf(torch is None, 'Torch CPU dependency is unavailable')
 class TensorContractTest(unittest.TestCase):
@@ -158,6 +201,59 @@ class TensorContractTest(unittest.TestCase):
             self.assertTrue(torch.equal(case.public['output'], case.public['inputs']['x']))
         with self.assertRaisesRegex(ValueError, 'retained earlier output'):
             eager_calls([first, second], SimpleNamespace(prepare=prepare), validate, lambda: None)
+
+    def test_later_call_cannot_corrupt_a_retained_input(self):
+        first, second = self.case('first'), self.case('second', 2)
+        def prepare(public):
+            def call():
+                public['output'].copy_(public['inputs']['x'])
+                if public is second.public:
+                    first.public['inputs']['x'].fill_(999)
+            return call
+        def validate(case):
+            self.assertTrue(torch.equal(case.public['output'], case.public['inputs']['x']))
+        with self.assertRaisesRegex(ValueError, 'input/weight storage'):
+            eager_calls([first, second], SimpleNamespace(prepare=prepare), validate, lambda: None)
+
+    def test_later_call_cannot_corrupt_a_retained_written_state(self):
+        first, second = self.case('first'), self.case('second', 2)
+        def prepare(public):
+            def call():
+                public['output'].copy_(public['inputs']['x'])
+                if public is second.public:
+                    first.public['state']['ssm'][1].fill_(999)
+            return call
+        def validate(case):
+            self.assertTrue(bool((case.public['state']['ssm'][1] == 7).all()))
+        with self.assertRaises(AssertionError):
+            eager_calls([first, second], SimpleNamespace(prepare=prepare), validate, lambda: None)
+
+    def test_retained_output_requires_byte_equality(self):
+        first, second = self.case('first', 0), self.case('second', 0)
+        def prepare(public):
+            def call():
+                public['output'].zero_()
+                if public is second.public:
+                    first.public['output'].neg_()
+            return call
+        with self.assertRaisesRegex(ValueError, 'retained earlier output'):
+            eager_calls([first, second], SimpleNamespace(prepare=prepare), lambda case: None, lambda: None)
+
+    def test_captured_aliases_keep_absolute_offsets_and_storage_extent(self):
+        from production.bundle import decode
+        raw = torch.arange(8, dtype=torch.float32)
+        record = {'groups': {'0': {'base_byte': 8, 'bytes': raw.view(torch.uint8)[8:24].clone()}},
+                  'tensors': {name: {'dtype': 'float32', 'shape': [count], 'stride': [1],
+                                     'group': '0', 'byte_offset_in_group': relative,
+                                     'storage_offset': offset, 'storage_nbytes': 32}
+                              for name, count, relative, offset in (('x', 4, 0, 2), ('y', 2, 4, 3))}}
+        tensors = decode(record, 'cpu')
+        self.assertEqual(tensors['x'].storage_offset(), 2)
+        self.assertEqual(tensors['y'].storage_offset(), 3)
+        self.assertEqual(tensors['x'].untyped_storage().nbytes(), 32)
+        self.assertTrue(torch.equal(tensors['x'], raw[2:6]))
+        tensors['x'][1] = -1
+        self.assertEqual(tensors['y'][0], -1)
 
     def test_missing_output_write_fails_numerical_gate(self):
         from production.case import assert_tensor

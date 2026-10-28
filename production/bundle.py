@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import hashlib
 
+MAX_STORAGE_BYTES = 1 << 30
+
 
 def load(row):
     import torch
@@ -27,13 +29,24 @@ def load(row):
 
 def decode(record, device):
     import torch
-    buffers = {group: value["bytes"].to(device) for group, value in record["groups"].items()}
+    buffers = {}
+    for group, value in record["groups"].items():
+        base, data = value["base_byte"], value["bytes"]
+        descriptors = [desc for desc in record["tensors"].values() if desc["group"] == group]
+        length = max([base + data.numel(), *(desc["storage_nbytes"] for desc in descriptors)])
+        if base < 0 or length > MAX_STORAGE_BYTES or data.dtype != torch.uint8:
+            raise ValueError("Captured storage is outside the supported archive domain")
+        storage = torch.zeros(length, dtype=torch.uint8, device=device)
+        storage[base:base + data.numel()].copy_(data.to(device))
+        buffers[group] = storage
     out = {}
     for name, desc in record["tensors"].items():
         dtype = getattr(torch, desc["dtype"])
         size = torch.empty((), dtype=dtype).element_size()
         storage = buffers[desc["group"]]
-        offset = desc["byte_offset_in_group"]
+        offset = record["groups"][desc["group"]]["base_byte"] + desc["byte_offset_in_group"]
+        if offset != desc["storage_offset"] * size:
+            raise ValueError(f"Captured offset disagrees with its alias group: {name}")
         if offset % size or storage.numel() % size:
             raise ValueError(f"Misaligned captured tensor: {name}")
         out[name] = storage.view(dtype).as_strided(desc["shape"], desc["stride"], offset // size)

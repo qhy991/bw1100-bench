@@ -1,4 +1,3 @@
-"""Production selections use the same suite owner as the SOL selections."""
 from __future__ import annotations
 
 import json
@@ -26,7 +25,6 @@ def _unknown(task_id):
 
 
 def captured_records(root: Path):
-    """Inspect both original shards without importing Torch or reading tensor archives."""
     rows = []
     required = {"rank0": {2, 4, 8}, "rank5": {1, 2, 4}}
     for rank, requests in required.items():

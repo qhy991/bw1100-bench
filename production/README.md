@@ -25,7 +25,8 @@ python bwbench.py production check --task glm53-kda-verify \
 The HCU wrapper mounts this checkout at `/work`. Materialize the external inputs
 and required model files under ignored `.data/production/` before entering it.
 A symlink to an unmounted host path is insufficient. Never commit captures,
-checkpoint tensors or generated reports. Reports are create-only. `performance`
+checkpoint tensors or generated reports. Reports are create-only. Missing prerequisites are `blocked`; a rejected candidate or failed check is `failed`.
+The report records the failure stage and whether device checking started. `performance`
 is always `not_measured`: this revision provides correctness tooling, not a new
 timing qualification, SOTA claim or serving acceptance.
 
@@ -85,14 +86,16 @@ and `rank5/manifest.json`, all 48 `.pt` archives and their original native repla
 admission. Rank0 contains requests 2,4,8; rank5 contains 1,2,4. Both layers 4 and
 24 and four consecutive calls per structural case are required. The existing
 manifest digest is checked once when each tensor archive crosses into the
-verifier. No source campaign checkout is imported.
+verifier. The decoder preserves recorded offsets, strides, storage extent and aliasing,
+with a one-GiB decoded-storage limit per alias group. No source campaign checkout is imported.
 
 The native arm requires both served HCU patches. Each retained native case gets
 its own receiver and unique prefix, even if two cases share prepared weights.
 The checker first replays native twice against the admitted captured outputs.
 It then checks candidate eager output, all written state, untouched regions,
 input/weight integrity, retained outputs across later calls, changed-content
-graph replay and a graph chain with prior queued stream work.
+graph replay and graph chains with prior queued stream work. Actual chain lengths are reported.
+All retained cases are checked before resets and after later graph work.
 
 Acceptance in this revision is strict captured/native equality. The extracted
 FP64 model is available in `production.kda_reference` for diagnosis. The source

@@ -16,7 +16,7 @@ recurrence (`vllm_hcu/.../patch_glm5next_kda_strided_recurrent.py`, COMPUTE_GATE
   g_t   = LOWER / (1 + exp(-exp(A_log[h]) * (g1[t,h,:] + dt_bias[h*D:(h+1)*D])))
   q,k L2-normalised per head with eps 1e-6; q scaled by K**-0.5; beta_t = sigmoid(beta_raw[t,h])
   State layout is [H, V, K] with K fastest (kernel address `i_hv*V*K + o_v[:,None]*K + o_k[None,:]`;
-  K == V == 128 here, so a transposed reading is shape-legal and silently wrong — it was, once).
+  K == V == 128 here, so a transposed reading is shape-legal and silently wrong).
   S  <- S * exp(g_t) broadcast over V     (decay on the K axis)
   v' <- beta_t * (v_t - S k_t)            (contract K)
   S  <- S + outer(v', k_t)
@@ -46,14 +46,14 @@ def gate(g1: torch.Tensor, a_log: torch.Tensor, dt_bias: torch.Tensor) -> torch.
 def conv_update(x: torch.Tensor, state: torch.Tensor, weight: torch.Tensor, offset: int):
     """x [T, C] tokens; state [C, state_len] this request's conv line; weight [C, WIDTH].
     Returns (silu out [T, C], new state [C, state_len])."""
-    x = x.double().t()                                   # [C, T]
+    x = x.double().t()
     st = state.double()
     T = x.shape[1]
-    seq = torch.cat([st[:, offset: offset + WIDTH - 1], x], dim=1)   # [C, 3 + T]
+    seq = torch.cat([st[:, offset: offset + WIDTH - 1], x], dim=1)
     w = weight.double()
     out = torch.stack([(seq[:, t: t + WIDTH] * w).sum(1) for t in range(T)], dim=1)
-    new = torch.cat([st[:, offset + 1: offset + WIDTH - 1], x], dim=1)   # [C, 2 + T]
-    if new.shape[1] < st.shape[1]:                        # decode: state_len == WIDTH-1
+    new = torch.cat([st[:, offset + 1: offset + WIDTH - 1], x], dim=1)
+    if new.shape[1] < st.shape[1]:
         new = new[:, -st.shape[1]:]
     return torch.nn.functional.silu(out).t(), new[:, : st.shape[1]]
 
@@ -67,10 +67,10 @@ def recurrence(q, k, v, g, beta, state):
     S = state.clone()
     outs, per_token = [], []
     for t in range(q.shape[0]):
-        S = S * torch.exp(g[t]).unsqueeze(-2)                    # decay along K
+        S = S * torch.exp(g[t]).unsqueeze(-2)
         vp = v[t] - torch.einsum("hvk,hk->hv", S, k[t])
         vp = beta[t].unsqueeze(-1) * vp
-        S = S + vp.unsqueeze(-1) * k[t].unsqueeze(-2)            # outer(v', k)
+        S = S + vp.unsqueeze(-1) * k[t].unsqueeze(-2)
         outs.append(torch.einsum("hvk,hk->hv", S, q[t]))
         per_token.append(S.clone())
     return torch.stack(outs), per_token

@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 
 from . import catalog
+from .case import same_bits
 
 
 def candidate_module(path):
@@ -28,7 +29,10 @@ def candidate_module(path):
 
 def runtime(device):
     import importlib.metadata
-    import torch
+    try:
+        import torch
+    except ImportError as exc:
+        raise catalog.PrerequisiteError("Production check requires the vendor Torch runtime") from exc
     if not torch.version.hip or not torch.cuda.is_available():
         raise catalog.PrerequisiteError("Production check requires the admitted Hygon HIP runtime")
     selected = torch.device(device)
@@ -38,15 +42,16 @@ def runtime(device):
     arch = torch.cuda.get_device_properties(selected).gcnArchName.split(":", 1)[0]
     if arch != "gfx938":
         raise catalog.PrerequisiteError(f"Expected gfx938, got {arch}")
-    version = importlib.metadata.version("vllm")
+    try:
+        version = importlib.metadata.version("vllm")
+    except importlib.metadata.PackageNotFoundError as exc:
+        raise catalog.PrerequisiteError("Production check requires the data2 vLLM runtime") from exc
     if not version.startswith("0.28.1+dtk2610"):
         raise catalog.PrerequisiteError("Expected the data2 vLLM 0.28.1+dtk2610 runtime")
     return {"arch": arch, "torch": torch.__version__, "hip": torch.version.hip, "vllm": version}
 
 
 def eager_calls(cases, candidate, validate, synchronize):
-    """Check the caller-owned ABI and retain every earlier output across calls."""
-    import torch
     prepared = []
     retained = []
     for case in cases:
@@ -60,22 +65,35 @@ def eager_calls(cases, candidate, validate, synchronize):
         case.integrity()
         validate(case)
         for old, snapshot in retained:
-            if not torch.equal(old, snapshot):
+            old.integrity()
+            validate(old)
+            if not same_bits(old.public["output"], snapshot):
                 raise ValueError("Candidate overwrote a retained earlier output")
-        retained.append((case.public["output"], case.public["output"].clone()))
+        retained.append((case, case.public["output"].clone()))
         prepared.append(call)
     return prepared, len(retained)
 
 
 def verify_calls(cases, candidate, validate):
-    """Eager retention, then a changed-content graph and unsynchronized-stream chain."""
     import torch
     prepared, retained_count = eager_calls(cases, candidate, validate, torch.cuda.synchronize)
+    retained = {id(case): case.public["output"].clone() for case in cases}
+
+    def check_all(changed=()):
+        changed_ids = {id(current) for current in changed}
+        for current in cases:
+            current.integrity()
+            validate(current)
+            if id(current) not in changed_ids and not same_bits(current.public["output"], retained[id(current)]):
+                raise ValueError("Candidate overwrote a retained earlier output")
+            retained[id(current)] = current.public["output"].clone()
+
     by_group = {}
     for i, case in enumerate(cases):
         by_group.setdefault(case.group, []).append(i)
     graph_domains = 0
     for indices in by_group.values():
+        check_all()
         if len(indices) < 2:
             raise ValueError("Changed-content graph check requires two cases per structural domain")
         i, j = indices[:2]
@@ -91,10 +109,11 @@ def verify_calls(cases, candidate, validate):
         case.substitute(other)
         graph.replay()
         torch.cuda.synchronize()
-        case.integrity()
-        validate(case)
+        check_all((case,))
         graph_domains += 1
+    chain_lengths = []
     for start in range(0, len(cases), 16):
+        check_all()
         batch = cases[start:start + 16]
         calls = prepared[start:start + 16]
         for case in batch:
@@ -116,11 +135,11 @@ def verify_calls(cases, candidate, validate):
             case.restore()
         graph.replay()
         torch.cuda.synchronize()
-        for case in batch:
-            case.integrity()
-            validate(case)
+        check_all(tuple(batch))
+        chain_lengths.append(len(calls))
+    check_all()
     return {"cases": len(cases), "retained_outputs": retained_count,
-            "changed_content_graph_domains": graph_domains, "graph_chain_length": 16,
+            "changed_content_graph_domains": graph_domains, "graph_chain_lengths": chain_lengths,
             "stream_order": "queued_work_before_capture"}
 
 
@@ -141,8 +160,8 @@ def main(argv=None):
     if args.command == "list":
         print(json.dumps(catalog.tasks(), ensure_ascii=False, indent=2))
         return 0
-    report = {"task": args.task, "status": "blocked", "performance": "not_measured",
-              "device_check_executed": False, "numeric_tolerance_calibrated": False}
+    report = {"task": args.task, "status": "blocked", "stage": "task_audit", "performance": "not_measured",
+              "device_check_started": False, "numeric_tolerance_calibrated": False}
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         with args.output.open("x") as out:
@@ -156,19 +175,27 @@ def main(argv=None):
         else:
             if args.task == "glm53-kda-verify" and (args.model is None or not args.model.is_dir()):
                 raise catalog.PrerequisiteError("KDA check requires --model with the data2 checkpoint config")
+            report["stage"] = "runtime_admission"
             report["runtime"] = runtime(args.device)
+            report["stage"] = "candidate_load"
             module = candidate_module(args.candidate)
+            report["stage"] = "native_replay"
+            report["device_check_started"] = True
             if args.task == "glm53-kda-verify":
                 from . import kda
                 cases = kda.cases(args.inputs, args.model, args.device)
+                report["stage"] = "candidate_checks"
                 report["checks"] = verify_calls(cases, module, kda.validate)
             else:
                 from . import lmhead
                 cases = lmhead.cases(args.model, args.device)
+                report["stage"] = "candidate_checks"
                 report["checks"] = verify_calls(cases, module, lmhead.validate)
             report["status"] = "passed"
-            report["device_check_executed"] = True
+    except catalog.PrerequisiteError as exc:
+        report["reason"] = f"{type(exc).__name__}: {exc}"
     except Exception as exc:
+        report["status"] = "failed"
         report["reason"] = f"{type(exc).__name__}: {exc}"
     if args.output:
         args.output.write_text(json.dumps(report, indent=2) + "\n")
