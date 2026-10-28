@@ -18,7 +18,8 @@ LOCK_DIR = Path.home() / '.local/state/bw1100-bench'
 # their copy in scripts/json_stream.py; tests/test_json_stream_release.py holds the two
 # equal, and preparation refuses a pinned gateway whose copy differs or is absent.
 RECEIPT_ROOTS = ('campaign', '.local')
-RECEIPT_UNWALKED_DIRS = frozenset(('.git', '.deps', '.data', 'triton-cache', 'aiter-jit-cache', '__pycache__'))
+RECEIPT_UNWALKED_DIRS = frozenset(('.git', '.deps', '.data', 'triton-cache', 'aiter-jit-cache',
+                                   '__pycache__', 'notes'))
 
 
 def _vram(device):

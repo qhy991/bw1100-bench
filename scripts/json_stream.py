@@ -28,8 +28,14 @@ GATEWAY_SCHEMA = 'bw1100-bench.hcu-admission.v1'
 # RELEASE_UNWALKED_DIRS. Inside, both checks fail closed without reading cache bytes as
 # records: a gateway pinned before #44 could write a receipt into campaign/__pycache__,
 # while Triton and AITER leave partial or binary .json files under .local (#45 review).
+# 'notes' is the author's own directory (r6 STOP-hcu5): an author wrote analysis prose into
+# .local/profile/.../analysis/summary.json with an invalid line, and the release check, unable
+# to read it as a record or admit it as captured output, halted a card no job was holding.
+# Under a notes/ directory a file is read only if it could be or hide a gateway record, and the
+# gateway refuses to write a receipt there, so nothing a check must see can hide behind it.
 RELEASE_ROOTS = ('campaign', '.local')
-RELEASE_UNWALKED_DIRS = frozenset(('.git', '.deps', '.data', 'triton-cache', 'aiter-jit-cache', '__pycache__'))
+RELEASE_UNWALKED_DIRS = frozenset(('.git', '.deps', '.data', 'triton-cache', 'aiter-jit-cache',
+                                   '__pycache__', 'notes'))
 _RECEIPT_MARKERS = (GATEWAY_SCHEMA.encode(), b'admission_receipts')
 
 

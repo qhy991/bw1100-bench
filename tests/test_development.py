@@ -167,7 +167,7 @@ class DevelopmentTests(unittest.TestCase):
                              capture_output=True, text=True)
         changes = [
             ('pre_44', original.replace('RECEIPT_ROOTS = ', 'OLD_ROOTS = ')),
-            ('other_dirs', original.replace("'aiter-jit-cache', '__pycache__'))", "'aiter-jit-cache'))")),
+            ('other_dirs', original.replace("'__pycache__', 'notes'))", "'__pycache__'))")),
             ('other_roots', original.replace("RECEIPT_ROOTS = ('campaign', '.local')", "RECEIPT_ROOTS = ('campaign', 'results')")),
             ('roots_disabled', original.replace("    if not parts or parts[0] not in RECEIPT_ROOTS or path.suffix != '.json':", "    if False:")),
             ('caches_disabled', original.replace('    if unwalked:', '    if False:')),
@@ -177,7 +177,7 @@ class DevelopmentTests(unittest.TestCase):
         ]
         if b29.returncode == 0:
             appended = (b29.stdout + "\nRECEIPT_ROOTS = ('campaign', '.local')\nRECEIPT_UNWALKED_DIRS = frozenset(("
-                        "'.git', '.deps', '.data', 'triton-cache', 'aiter-jit-cache', '__pycache__'))\n")
+                        "'.git', '.deps', '.data', 'triton-cache', 'aiter-jit-cache', '__pycache__', 'notes'))\n")
             changes.append(('b29aa5a_with_constants_appended', appended))
             prepare.require_receipt_scope(original.encode(), 'guarded')  # the real copy passes
             with self.assertRaisesRegex(ValueError, 'receipt-scope guard'):

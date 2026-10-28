@@ -275,6 +275,24 @@ class StreamReleaseTests(unittest.TestCase):
         self.assertIn({'file': '.local', 'reason': 'symlink_directory_not_followed'},
                       release_audit(self.root)['notes'])
 
+    def test_an_author_notes_directory_holds_prose_without_withholding_the_release(self):
+        """r6 STOP-hcu5: an author's analysis prose in a .json inside the scope, invalid as a
+        record and inadmissible as captured output, halted an HCU no job was holding."""
+        write(self.root / 'campaign/admission.json', admission())
+        write(self.root / 'campaign/admission-terminal.json', terminal())
+        self.gates(True)
+        prose = b'{\n  "kernel_time_us_median": 5.119 (from campaign/evaluations/e/kernel-time.json),\n}\n'
+        for name in ('campaign/notes/summary.json', '.local/profile/p/notes/analysis.json'):
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(prose)
+            with self.subTest(name=name):
+                self.gates(True)
+        # A notes file that could be or hide a gateway record is still read.
+        (self.root / 'campaign/notes/summary.json').write_bytes(
+            json.dumps(admission('unreleased')).encode())
+        self.gates(False)
+
     def test_a_receipt_shaped_file_inside_a_cache_still_withholds_the_release(self):
         write(self.root / 'campaign/admission.json', admission())
         write(self.root / 'campaign/admission-terminal.json', terminal())
