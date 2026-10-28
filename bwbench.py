@@ -198,9 +198,13 @@ def check_problem(task, *, device, candidate_path, symbol, reference_selfcheck, 
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "production":
+        from production.runner import main as production_main
+        return production_main(sys.argv[2:])
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("list")
+    commands.add_parser("production", help="GLM-5.3 production task list, audit and correctness check")
     audit = commands.add_parser("audit")
     audit.add_argument("--output", type=Path)
     check = commands.add_parser("check")

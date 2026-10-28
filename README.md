@@ -155,3 +155,19 @@ uv pip install --python .venv/bin/python -r requirements-cpu-test.txt
 测试覆盖数值错误、NaN/Inf、最大误差上限、shape/dtype、输出名称、整数精确比较、
 参考输入隔离、多轮新输入、首错停止及 CPU/部分测试不能升级为设备资格。
 实际验证范围见 [docs/VALIDATION.md](docs/VALIDATION.md)。
+
+## GLM-5.3 production operators
+
+The additional `production` command lists and audits three data2 production
+contracts: KDA verify, full DSA decode and LM-head. They retain the original SOL
+v2 twelve-task denominator. See [production contracts and commands](production/README.md)
+for external inputs, candidate ABI, native/state checks and qualification limits.
+
+```bash
+python bwbench.py production list
+python bwbench.py production audit --task glm53-kda-verify --inputs .data/production/kda-data2
+```
+
+KDA and LM-head have Bench-owned correctness evaluators. DSA is explicitly
+registered as awaiting capture and evaluator admission. No new GPU or serving
+result is claimed; production timing is not measured by this command.

@@ -204,3 +204,14 @@ check the live container and HCU/KFD state, and use it only after privileged
 cleanup is observed. Subsequent bounded checks used observed-idle HCU1 only.
 The replacement inner timeout's HCU1 selfcheck (`bw-a86a4f64181d`) exited
 124 and confirmed its own container removed.
+
+## GLM-5.3 production selections
+
+`suite.json.production_tasks` adds KDA verify, complete DSA decode and LM-head
+alongside the unchanged SOL v2 selection. Their contracts and native bindings
+are in [production tasks](../production/README.md). The installed data2 served
+call is a deployment baseline, not an asserted global fastest implementation.
+KDA uses strict admitted captured/native equality; its FP64 math is diagnostic.
+DSA remains capture/evaluator pending and refuses evaluation. LM-head uses real
+checkpoint weights and explicitly synthetic activations. No new baseline device
+qualification or performance result follows from the CPU tooling checks.
