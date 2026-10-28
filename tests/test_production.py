@@ -239,6 +239,24 @@ class TensorContractTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'retained earlier output'):
             eager_calls([first, second], SimpleNamespace(prepare=prepare), lambda case: None, lambda: None)
 
+    def test_undefined_output_padding_is_not_a_retained_result(self):
+        from production.case import Case
+        cases = []
+        for name in ('first', 'second'):
+            output = torch.zeros(1, 4, 2)
+            cases.append(Case(name, {'output': output}, {}, {'output': output},
+                              {'output': None}, ('padded',), output_view=output[:, :2]))
+        def prepare(public):
+            def call():
+                public['output'].fill_(2)
+                if public is cases[1].public:
+                    cases[0].public['output'][:, 2:].fill_(-1)
+            return call
+        def validate(case):
+            self.assertTrue(bool((case.output_view == 2).all()))
+        _, count = eager_calls(cases, SimpleNamespace(prepare=prepare), validate, lambda: None)
+        self.assertEqual(count, 2)
+
     def test_captured_aliases_keep_absolute_offsets_and_storage_extent(self):
         from production.bundle import decode
         raw = torch.arange(8, dtype=torch.float32)

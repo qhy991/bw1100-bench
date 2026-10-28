@@ -66,10 +66,10 @@ def eager_calls(cases, candidate, validate, synchronize):
         validate(case)
         for old, snapshot in retained:
             old.integrity()
-            validate(old)
-            if not same_bits(old.public["output"], snapshot):
+            if not same_bits(old.output_view, snapshot):
                 raise ValueError("Candidate overwrote a retained earlier output")
-        retained.append((case, case.public["output"].clone()))
+            validate(old)
+        retained.append((case, case.output_view.clone()))
         prepared.append(call)
     return prepared, len(retained)
 
@@ -77,16 +77,16 @@ def eager_calls(cases, candidate, validate, synchronize):
 def verify_calls(cases, candidate, validate):
     import torch
     prepared, retained_count = eager_calls(cases, candidate, validate, torch.cuda.synchronize)
-    retained = {id(case): case.public["output"].clone() for case in cases}
+    retained = {id(case): case.output_view.clone() for case in cases}
 
     def check_all(changed=()):
         changed_ids = {id(current) for current in changed}
         for current in cases:
             current.integrity()
             validate(current)
-            if id(current) not in changed_ids and not same_bits(current.public["output"], retained[id(current)]):
+            if id(current) not in changed_ids and not same_bits(current.output_view, retained[id(current)]):
                 raise ValueError("Candidate overwrote a retained earlier output")
-            retained[id(current)] = current.public["output"].clone()
+            retained[id(current)] = current.output_view.clone()
 
     by_group = {}
     for i, case in enumerate(cases):

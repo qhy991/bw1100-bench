@@ -120,16 +120,15 @@ def make_case(record, row, device):
         raise ValueError("Captured output capacity is smaller than its real-token range")
     pool_mask = torch.zeros(size, dtype=torch.bool, device=device)
     pool_mask[local] = True
-    out_mask = torch.zeros_like(output, dtype=torch.bool)
-    out_mask[:, :m] = True
     expected["core_attn_out"] = expected["core_attn_out"][:, :m]
     public = {"inputs": inputs, "weights": weights,
               "metadata": {**sc, "layer": row["layer"], "real_tokens": m},
               "state": {"conv": conv, "ssm": ssm}, "output": output}
     case = Case(f"{row['rank']}/{row['path'].name}", public, expected,
                 {"conv": conv, "ssm": ssm, "output": output},
-                {"conv": pool_mask, "ssm": pool_mask, "output": out_mask},
-                ("kda", row["layer"], reqs, tuple(qkv.shape), tuple(g1.shape), tuple(beta.shape), size))
+                {"conv": pool_mask, "ssm": pool_mask, "output": None},
+                ("kda", row["layer"], reqs, tuple(qkv.shape), tuple(g1.shape), tuple(beta.shape), size),
+                output_view=output[:, :m])
     case.local = local
     return case
 

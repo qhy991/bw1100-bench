@@ -78,8 +78,8 @@ Inputs are the original BF16 strided qkv projection, g1 and beta views, prepared
 conv weight, A_log and dt_bias, accepted-token metadata and state mappings.
 The conv pool has SD layout `[slots,6,24576]` BF16. The recurrent state is
 `[slots,64,128,128]` FP32 with `[H,V,K]` indexing. The output and every written
-state row are judged. Slot zero, unused pool rows and padded output rows remain
-unchanged.
+state row are judged. Slot zero and unused pool rows remain unchanged. Padded
+output rows are undefined in the captured ABI and are outside the judged region.
 
 Supply the original `kda-data2` directory containing both `rank0/manifest.json`
 and `rank5/manifest.json`, all 48 `.pt` archives and their original native replay

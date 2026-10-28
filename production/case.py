@@ -46,8 +46,11 @@ class Case:
     masks: dict
     group: tuple
     shared_snapshots: dict = field(default_factory=dict)
+    output_view: object = None
 
     def __post_init__(self):
+        if self.output_view is None:
+            self.output_view = self.public["output"]
         self.owned = tensors(self.public)
         self.layouts = {name: layout(value) for name, value in self.owned.items()}
         self.before = {name: self.shared_snapshots[name] if name in self.shared_snapshots else value.clone()
