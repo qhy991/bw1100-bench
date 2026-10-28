@@ -179,6 +179,35 @@ class DevelopmentTests(unittest.TestCase):
         self.assertEqual(list((run / 'campaign/inherited').iterdir()), [])
         self.assertEqual(reconcile(run)['case_ids'], CASES)
 
+    def test_a_pinned_gateway_that_cannot_pin_the_physical_card_prepares_no_run(self):
+        """node4 renumbered its HCUs (2026-10-28): every development admission passes
+        --expected-pci, so a gateway that does not parse it and refuse a mismatch is refused."""
+        from development.development_stop import HCU_PCI_MISMATCH
+        source = subprocess.run(['git', '-C', str(ROOT), 'show', 'origin/task/dcu-gateway-expected-pci:scripts/hcu_run.py'],
+                                capture_output=True, text=True)
+        if source.returncode != 0:
+            self.skipTest('the expected-PCI gateway branch is not reachable here')
+        prepare.require_pci_pinning(source.stdout.encode(), 'expected-pci')
+        for change, text in (('no_flag', source.stdout.replace("'--expected-pci'", "'--expected-card'")),
+                             ('other_refusal', source.stdout.replace(HCU_PCI_MISMATCH, 'card differs'))):
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, 'does not refuse a renumbered card'):
+                prepare.require_pci_pinning(text.encode(), change)
+
+    def test_preparation_refuses_a_pinned_gateway_without_expected_pci(self):
+        adapter, plan, contracts = self.sources()
+        gateway = adapter / 'scripts/hcu_run.py'
+        gateway.write_text(gateway.read_text().replace("'--expected-pci'", "'--expected-card'"))
+        git(adapter, 'commit', '-qam', 'Gateway fixture without --expected-pci')
+        pin = git(adapter, 'rev-parse', 'HEAD')
+        plan['adapter_commit'] = pin
+        for config in plan['hosts'].values():
+            config['gateway']['commit'] = pin
+        write(self.root / 'plan.json', plan)
+        with self.assertRaisesRegex(ValueError, 'does not refuse a renumbered card'):
+            self.prepare(adapter)
+        self.assertFalse((self.root / 'runs').exists())
+        self.assertFalse((self.root / 'allocation.json').exists())
+
     def test_a_pinned_gateway_without_the_receipt_scope_guard_prepares_no_run(self):
         """#45 review: a Run executes the pinned gateway's hcu_run.py. Preparation imports it in
         isolation and exercises its _receipt_paths, so a gateway that predates #44 (b29aa5a

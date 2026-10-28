@@ -56,6 +56,29 @@ PRE_ADMISSION_REFUSALS = (
 )
 
 
+# The gateway's last line when --device resolves to another physical card than the plan's
+# hcu_pci (node4, 2026-10-28). Nothing was admitted, but every later admission on this card
+# would be refused the same way, so it stops the card with this reason rather than failing
+# the one evaluation or reading the missing receipt as an unknown release.
+HCU_PCI_MISMATCH = 'selected HCU is not the expected physical PCI device; no GPU admitted'
+HCU_PCI_MISMATCH_STOP = 'HCU renumbered: the assigned index is no longer the planned physical card'
+
+
+def _last_gateway_line(folder, receipt, log_name):
+    terminal = folder / (Path(receipt).stem + '-terminal.json')
+    if (folder / receipt).exists() or terminal.exists():
+        return None
+    try:
+        log = (folder / log_name).read_text(errors='replace')
+    except OSError:
+        return None
+    return next((line.strip() for line in reversed(log.splitlines()) if line.strip()), '')
+
+
+def hcu_pci_mismatch(folder, receipt='admission.json', log_name='device.log'):
+    return _last_gateway_line(folder, receipt, log_name) == 'RuntimeError: ' + HCU_PCI_MISMATCH
+
+
 def refused_before_admission(folder, receipt='admission.json', log_name='device.log'):
     """The gateway refusal in log_name when neither receipt nor its terminal exists, else None."""
     terminal = folder / (Path(receipt).stem + '-terminal.json')
@@ -74,6 +97,8 @@ def refused_before_admission(folder, receipt='admission.json', log_name='device.
 
 def device_failure_is_infrastructure(folder, receipt='admission.json', log_name='device.log'):
     """Candidate compilation/numerics failures remain candidate evidence."""
+    if hcu_pci_mismatch(folder, receipt, log_name):
+        return HCU_PCI_MISMATCH_STOP
     if lock_wait_timed_out(folder, receipt, log_name):
         return None
     admission = folder / receipt

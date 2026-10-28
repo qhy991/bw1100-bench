@@ -317,7 +317,12 @@ def run_probe(root, identity, request_name, skip_reason=''):
                 with (folder / (stage + '.log')).open('x') as log:
                     code = subprocess.call(gateway, cwd=root, env=env, stdout=log, stderr=subprocess.STDOUT)
                 if kind == 'development' and code:
-                    from campaign.development_stop import refused_before_admission
+                    from campaign.development_stop import (HCU_PCI_MISMATCH_STOP, halt as halt_card,
+                                                           hcu_pci_mismatch, refused_before_admission)
+                    if hcu_pci_mismatch(folder, stage + '-admission.json', stage + '.log'):
+                        outcome['admission_receipts'].remove(receipt)
+                        halt_card(bound, HCU_PCI_MISMATCH_STOP, relative)
+                        raise ValueError(stage + ' refused before admission: ' + HCU_PCI_MISMATCH_STOP)
                     # The gateway refused before admission (lock wait, an existing STOP, an expired
                     # window or an occupied card): there is no release to verify, so the probe
                     # fails without stopping the card.

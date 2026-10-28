@@ -7,7 +7,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from development.development_stop import device_failure_is_infrastructure, halt
+from development.development_stop import (HCU_PCI_MISMATCH, HCU_PCI_MISMATCH_STOP,
+                                          device_failure_is_infrastructure, halt)
 
 
 class DevelopmentStopTests(unittest.TestCase):
@@ -71,6 +72,20 @@ class DevelopmentStopTests(unittest.TestCase):
         (self.folder / 'device.log').write_text('Cannot connect to the Docker daemon at unix:///var/run/docker.sock')
         self.assertIn('device runtime or admission service failed',
                       device_failure_is_infrastructure(self.folder))
+
+    def test_a_renumbered_card_stops_the_card_by_name_before_admission(self):
+        (self.folder / 'admission.json').unlink()
+        (self.folder / 'admission-terminal.json').unlink()
+        (self.folder / 'device.log').write_text(
+            '{"status": "refused_before_admission", "reason": "hcu_pci_mismatch"}\n'
+            'RuntimeError: ' + HCU_PCI_MISMATCH + '\n')
+        self.assertEqual(device_failure_is_infrastructure(self.folder), HCU_PCI_MISMATCH_STOP)
+
+    def test_mismatch_text_that_is_not_the_last_gateway_line_is_not_a_renumbering(self):
+        (self.folder / 'admission.json').unlink()
+        (self.folder / 'admission-terminal.json').unlink()
+        (self.folder / 'device.log').write_text(HCU_PCI_MISMATCH + '\nTriton compilation failed\n')
+        self.assertNotEqual(device_failure_is_infrastructure(self.folder), HCU_PCI_MISMATCH_STOP)
 
     def test_unknown_release_takes_precedence_over_runtime_marker(self):
         (self.folder / 'device.log').write_text('device with id=6 is unavailable')

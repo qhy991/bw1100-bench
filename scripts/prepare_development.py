@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT))
 from campaign.binding import GATEWAY_FILES, clean, git, read
 from development.development_binding import ADAPTER_SCRIPTS, BUDGET, KIND, inherited_path, render_agents, render_task, validate_plan
 from scripts.json_stream import RECEIPT_REFUSED_DIRS, RELEASE_ROOTS
+from development.development_stop import HCU_PCI_MISMATCH
 from scripts.prepare_bench import clone, gateway_sources, new_json, source_identity
 
 # What the pinned gateway's _receipt_paths must refuse and admit (#44, #45 review).
@@ -59,6 +60,14 @@ def require_receipt_scope(gateway_source, commit):
                 raise ValueError(refusal + 'it refuses ' + name + ': %r' % error) from error
 
 
+def require_pci_pinning(gateway_source, commit):
+    # Every development admission passes --expected-pci; a gateway that does not parse it
+    # would fail each one at argparse, which the adapter would read as a candidate failure.
+    if not all(text in gateway_source for text in (b"'--expected-pci'", HCU_PCI_MISMATCH.encode())):
+        raise ValueError('Pinned gateway ' + commit + ' scripts/hcu_run.py does not refuse a renumbered card '
+                         '(--expected-pci); pin a gateway at or after the expected-PCI change')
+
+
 def prepare(plan_path, contracts_path, disposition_path, host, output):
     plan, contracts = read(plan_path), read(contracts_path)
     validate_plan(plan, contracts)
@@ -73,6 +82,7 @@ def prepare(plan_path, contracts_path, disposition_path, host, output):
     clean(gateway, config['gateway']['commit'])
     gateway_files = gateway_sources(gateway, config['gateway']['commit'])
     require_receipt_scope(gateway_files['scripts/hcu_run.py'], config['gateway']['commit'])
+    require_pci_pinning(gateway_files['scripts/hcu_run.py'], config['gateway']['commit'])
     selected = [row for row in plan['assignments'] if row['host'] == host]
     if output.exists() or not selected or any(Path(row['root']).exists() for row in selected):
         raise ValueError('Preparation requires a nonempty host subset and fresh output/Run roots')
