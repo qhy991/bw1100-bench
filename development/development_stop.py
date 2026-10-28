@@ -65,7 +65,11 @@ def refused_before_admission(folder, receipt='admission.json', log_name='device.
         log = (folder / log_name).read_text(errors='replace')
     except OSError:
         return None
-    return next((reason for reason in PRE_ADMISSION_REFUSALS if 'RuntimeError: ' + reason in log), None)
+    # The refusal is the gateway's own last word. Container output is printed before the
+    # terminal receipt, so a string an author's command echoed cannot be the final line.
+    last = next((line.strip() for line in reversed(log.splitlines()) if line.strip()), '')
+    return next((reason for reason in PRE_ADMISSION_REFUSALS
+                 if last == 'RuntimeError: ' + reason), None)
 
 
 def device_failure_is_infrastructure(folder, receipt='admission.json', log_name='device.log'):
