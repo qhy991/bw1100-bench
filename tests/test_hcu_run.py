@@ -44,7 +44,8 @@ class HcuRunTests(unittest.TestCase):
                              '.local/aiter-jit-cache/x/a.json', 'campaign/.deps/a.json',
                              'campaign/.data/a.json', '.local/.git/a.json',
                              'campaign/admission.txt', 'campaign/to-data/admission.json',
-                             '.local/profile/to-cache/admission.json'):
+                             '.local/profile/to-cache/admission.json',
+                             'campaign/notes/admission.json', '.local/profile/RUN/notes/admission.json'):
                     with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'release checks'):
                         hcu_run._receipt_paths(name)
                 for name, resolved in (('campaign/evaluations/e1/correctness-admission.json', None),

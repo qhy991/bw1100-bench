@@ -20,7 +20,8 @@ LOCK_DIR = Path.home() / '.local/state/bw1100-bench'
 # Run's adapter (development branch) and keep their copy in scripts/json_stream.py; that
 # branch's tests/test_json_stream_release.py holds the two equal.
 RECEIPT_ROOTS = ('campaign', '.local')
-RECEIPT_UNWALKED_DIRS = frozenset(('.git', '.deps', '.data', 'triton-cache', 'aiter-jit-cache', '__pycache__'))
+RECEIPT_UNWALKED_DIRS = frozenset(('.git', '.deps', '.data', 'triton-cache', 'aiter-jit-cache',
+                                   '__pycache__', 'notes'))
 
 
 def _check_stop():
