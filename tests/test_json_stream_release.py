@@ -303,6 +303,23 @@ class StreamReleaseTests(unittest.TestCase):
         (self.root / 'campaign/notes').symlink_to(hidden, target_is_directory=True)
         self.gates(False)
 
+    def test_a_symlinked_file_inside_notes_withholds_the_release(self):
+        write(self.root / 'campaign/admission.json', admission())
+        write(self.root / 'campaign/admission-terminal.json', terminal())
+        write(self.root / '.data/hidden/admission.json', admission('unreleased'))
+        (self.root / 'campaign/notes').mkdir()
+        (self.root / 'campaign/notes/link.json').symlink_to(self.root / '.data/hidden/admission.json')
+        self.gates(False)
+
+    def test_reserved_directory_names_are_not_record_ids(self):
+        from scripts.json_stream import admissible_record_id
+        for identity in ('notes', '__pycache__', 'triton-cache', '.git', 'Notes', '', 'a' * 65):
+            with self.subTest(identity=identity):
+                self.assertFalse(admissible_record_id(identity))
+        for identity in ('notes-1', 'probe-01', 'final-confirmation'):
+            with self.subTest(identity=identity):
+                self.assertTrue(admissible_record_id(identity))
+
     def test_an_unreadable_file_in_a_notes_or_cache_directory_withholds_the_release(self):
         """The fail-closed rule receipt_shaped promises: unreadable bytes cannot be ruled out."""
         write(self.root / 'campaign/admission.json', admission())

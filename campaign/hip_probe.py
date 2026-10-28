@@ -232,8 +232,9 @@ def bench_stages(task, entry, folder):
 
 
 def run_probe(root, identity, request_name, skip_reason=''):
-    if not re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,63}', identity):
-        raise ValueError('Use a unique lowercase probe ID')
+    from scripts.json_stream import admissible_record_id
+    if not admissible_record_id(identity):
+        raise ValueError('Use a unique lowercase probe ID that is not a reserved directory name')
     root = root.resolve()
     folder = own_path(root, 'campaign/engineering/' + identity)
     folder.mkdir(parents=True, exist_ok=False)

@@ -238,6 +238,16 @@ class NativeProbeTests(unittest.TestCase):
                 stop.unlink()
                 self.failure = self.damage = None
 
+    def test_a_reserved_directory_name_is_refused_before_any_probe_work(self):
+        self.bound.update(compiler=self.bound['compiler_commit'],
+                          batch_stop_file=str(self.root / 'STOP-hcu4.json'))
+        with patch.dict(sys.modules, {'campaign.development_stop': development_stop}), \
+             self.assertRaisesRegex(ValueError, 'reserved directory name'):
+            self.run_probe('notes', kind='development')
+        self.assertEqual(self.calls, [])
+        self.assertFalse((self.root / 'campaign/engineering/notes').exists())
+        self.assertFalse(Path(self.bound['batch_stop_file']).exists())
+
     def test_a_lock_wait_timeout_fails_the_probe_without_stopping_the_card(self):
         self.bound.update(compiler=self.bound['compiler_commit'],
                           batch_stop_file=str(self.root / 'STOP-hcu4.json'))
