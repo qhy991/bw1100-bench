@@ -1,3 +1,4 @@
+import contextlib
 """Focused safety checks for the standalone HCU admission boundary."""
 
 import importlib.util
@@ -418,6 +419,52 @@ class HcuRunTests(unittest.TestCase):
                     hcu_run.main()
             self.assertTrue(stop.exists())
             self.assertFalse((root / 'campaign/results/job.json').exists())
+
+    @contextlib.contextmanager
+    def bound_to(self, root, expected, pci='0000:ca:00.0'):
+        argv = ['hcu_run.py', '--image', 'image', '--device', '4', '--receipt', 'campaign/results/job.json']
+        if expected is not None:
+            argv += ['--expected-pci', expected]
+        argv += ['--', 'true']
+        binding = {'runtime': 'dcu', 'device_selector': '4', 'pci_bus_id': pci,
+                   'cdi_device': 'c-3000.com/hcu=4', 'render_node': '/dev/dri/renderD133'}
+        with mock.patch.object(hcu_run, 'ROOT', root), \
+             mock.patch.object(hcu_run, 'LOCK_DIR', root / '.locks'), \
+             mock.patch.dict(hcu_run.os.environ, {'BWBENCH_STOP_FILE': str(root / 'STOP.json')}), \
+             mock.patch.object(sys, 'argv', argv), \
+             mock.patch.object(hcu_run.subprocess, 'check_output', return_value='sha256:pinned'), \
+             mock.patch.object(hcu_run, '_vram', return_value='0%'), \
+             mock.patch.object(hcu_run, '_kfd_visible', return_value=False), \
+             mock.patch.object(hcu_run, '_runtime_binding', return_value=binding), \
+             mock.patch.object(hcu_run.subprocess, 'run') as run:
+            yield run
+
+    def test_a_renumbered_card_is_refused_before_admission_without_a_stop(self):
+        """node4 2026-10-28: a card left the bus and hy-smi indices shifted onto other cards."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with self.bound_to(root, '0000:b1:00.0') as run:
+                with self.assertRaisesRegex(RuntimeError, 'not the expected 0000:b1:00.0; no GPU admitted'):
+                    hcu_run.main()
+                self.assertFalse(any(call.args and call.args[0][:2] == ['docker', 'run'] for call in run.call_args_list))
+            self.assertFalse((root / 'campaign/results/job.json').exists())
+            self.assertFalse((root / 'STOP.json').exists())
+
+    def test_the_expected_card_is_admitted_and_its_pci_recorded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with self.bound_to(root, '0000:CA:00.0'), \
+                 mock.patch.object(hcu_run, '_write_receipt', side_effect=RuntimeError('stop here')) as receipt:
+                with self.assertRaisesRegex(RuntimeError, 'stop here'):
+                    hcu_run.main()
+            self.assertEqual(receipt.call_args.args[1]['expected_pci'], '0000:ca:00.0')
+            self.assertEqual(receipt.call_args.args[1]['runtime_device_binding']['pci_bus_id'], '0000:ca:00.0')
+
+    def test_an_expected_pci_that_is_not_a_bus_id_is_a_caller_error(self):
+        argv = ['hcu_run.py', '--image', 'i', '--device', '4', '--receipt', 'campaign/r.json',
+                '--expected-pci', 'ca:00', '--', 'true']
+        with mock.patch.object(sys, 'argv', argv), self.assertRaises(SystemExit):
+            hcu_run.main()
 
     def test_release_observer_denial_writes_unknown_terminal_and_stops_queue(self):
         with tempfile.TemporaryDirectory() as tmp:
