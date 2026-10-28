@@ -118,6 +118,14 @@ def validate_plan(plan, contracts):
         if (not hcus or len(set(hcus)) != len(hcus) or
                 any(type(hcu) is not int or hcu not in range(1, 7) for hcu in hcus)):
             raise ValueError('Use the explicitly qualified nonzero HCU subset')
+        # hy-smi renumbers HCUs when a card leaves the bus (node4, 2026-10-28), so each
+        # index names the physical card it must resolve to; the gateway refuses any other.
+        pci = config.get('hcu_pci')
+        if (not isinstance(pci, dict) or set(pci) != {str(hcu) for hcu in hcus}
+                or any(not isinstance(v, str) or not re.fullmatch(r'[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]', v)
+                       for v in pci.values())
+                or len(set(pci.values())) != len(pci)):
+            raise ValueError('Name each declared HCU by its distinct physical PCI bus id (hcu_pci)')
         if type(config['start_window_seconds']) is not int or config['start_window_seconds'] <= 0:
             raise ValueError('Declare a bounded host start window')
         for field in ('home', 'owner_root', 'compiler_root'):
@@ -167,7 +175,8 @@ def reconcile(root, mounted=False):
     if mounted and root != Path('/work'):
         raise ValueError('The qualified container mounts the Run at /work')
     if ((not mounted and root != Path(row['root'])) or binding['root'] != row['root'] or
-            any(binding[field] != row[field] for field in ('task', 'host', 'hcu'))):
+            any(binding[field] != row[field] for field in ('task', 'host', 'hcu'))
+            or binding.get('hcu_pci') != config['hcu_pci'][str(row['hcu'])]):
         raise ValueError('Prepared Run differs from its frozen static allocation')
     if binding['compiler'] != plan['compiler'] or binding['gateway'] != config['gateway']['commit']:
         raise ValueError('Prepared Compiler or qualified gateway changed')

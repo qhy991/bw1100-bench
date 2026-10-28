@@ -114,6 +114,7 @@ def prepare(plan_path, contracts_path, disposition_path, host, output):
         for name in ADAPTER_SCRIPTS:
             shutil.copyfile(ROOT / 'development' / name, run / 'campaign' / name)
         binding = dict(task=task, root=str(run), host=host, home=config['home'], hcu=row['hcu'],
+            hcu_pci=config['hcu_pci'][str(row['hcu'])],
             compiler=plan['compiler'], gateway=config['gateway']['commit'], image=config['image'],
             gateway_files=list(GATEWAY_FILES), **plan['controls'],
             **{key: contract[key] for key in ('rows', 'columns', 'depth', 'case_ids', 'abi')},

@@ -50,7 +50,9 @@ def allocation(root, adapter='a' * 40, compiler='b' * 40):
     controls = dict(model='claude/glm-5.3:high', wall_time_seconds=10800,
         search_seconds=9000, confirmation_seconds=1800, token_limits=None, capacity_per_hcu=1,
         reference_access='known_kernel_reproduction_with_declared_development_incumbent')
-    hosts = {name: dict(hcus=[1, 2] if name == 'first' else [2, 3], home=str(root / 'home'),
+    hosts = {name: dict(hcus=[1, 2] if name == 'first' else [2, 3],
+        hcu_pci=({'1': '0000:56:00.0', '2': '0000:05:00.0'} if name == 'first'
+                 else {'2': '0000:05:00.0', '3': '0000:ca:00.0'}), home=str(root / 'home'),
         owner_root=str(root / name / 'owner'), compiler_root=str(root / 'compiler'),
         gateway=dict(root=str(root / 'adapter'), commit=adapter), image='sha256:' + 'c' * 64,
         start_window_seconds=172800) for name in ('first', 'second')}
@@ -74,7 +76,8 @@ class DevelopmentTests(unittest.TestCase):
     def test_complete_static_contract_and_explicit_version(self):
         plan, contracts = allocation(self.root)
         validate_plan(plan, contracts)
-        for change in ('duplicate', 'missing', 'unselected', 'hcu_zero', 'host_excluded', 'invalid_authors', 'budget'):
+        for change in ('duplicate', 'missing', 'unselected', 'hcu_zero', 'host_excluded', 'invalid_authors', 'budget',
+                       'pci_missing', 'pci_partial', 'pci_extra', 'pci_duplicate', 'pci_malformed'):
             bad = copy.deepcopy(plan)
             if change == 'duplicate': bad['assignments'][-1] = bad['assignments'][0]
             if change == 'missing': bad['assignments'].pop()
@@ -83,6 +86,11 @@ class DevelopmentTests(unittest.TestCase):
             if change == 'host_excluded': bad['assignments'][2]['hcu'] = 1
             if change == 'invalid_authors': bad['controls']['capacity_per_hcu'] = MAX_AUTHORS_PER_HCU + 1
             if change == 'budget': bad['controls']['search_seconds'] = 9100
+            if change == 'pci_missing': del bad['hosts']['first']['hcu_pci']
+            if change == 'pci_partial': del bad['hosts']['first']['hcu_pci']['2']
+            if change == 'pci_extra': bad['hosts']['first']['hcu_pci']['4'] = '0000:b1:00.0'
+            if change == 'pci_duplicate': bad['hosts']['first']['hcu_pci']['2'] = '0000:56:00.0'
+            if change == 'pci_malformed': bad['hosts']['first']['hcu_pci']['1'] = 'ca:00'
             with self.subTest(change=change), self.assertRaises(ValueError):
                 validate_plan(bad, contracts)
 
@@ -139,6 +147,22 @@ class DevelopmentTests(unittest.TestCase):
         git(run, 'add', '.')
         git(run, 'commit', '-qm', 'Fixture changed hypothesis')
         with self.assertRaisesRegex(ValueError, 'hypothesis'):
+            reconcile(run)
+
+    def test_a_prepared_run_binds_its_hcu_to_the_planned_physical_card(self):
+        adapter, plan, contracts = self.sources()
+        write(self.root / 'plan.json', plan)
+        with patch.object(prepare, 'ROOT', adapter):
+            prepare.prepare(self.root / 'plan.json', self.root / 'contracts.json',
+                            self.root / 'disposition.json', 'first', self.root / 'allocation.json')
+        run = Path(plan['assignments'][0]['root'])
+        self.assertEqual(reconcile(run)['hcu_pci'], '0000:56:00.0')
+        binding = json.loads((run / 'campaign/development-binding.json').read_text())
+        binding['hcu_pci'] = '0000:b1:00.0'
+        write(run / 'campaign/development-binding.json', binding)
+        git(run, 'add', '.')
+        git(run, 'commit', '-qm', 'Fixture changed physical card')
+        with self.assertRaisesRegex(ValueError, 'differs from its frozen static allocation'):
             reconcile(run)
 
     def test_starter_only_prepare_has_no_inherited_provenance(self):

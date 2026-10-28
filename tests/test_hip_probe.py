@@ -51,7 +51,7 @@ class NativeProbeTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name).resolve()
         self.request = source_fixture(self.root)
-        self.bound = dict(task='L1/fixture', image='sha256:' + 'a' * 64, hcu=4,
+        self.bound = dict(task='L1/fixture', image='sha256:' + 'a' * 64, hcu=4, hcu_pci='0000:ca:00.0',
                           compiler_commit='b' * 40)
         started = time.time() - 5400
         self.deadline = dict(started_at_epoch=started, search_stop_at_epoch=started + 9000,

@@ -310,7 +310,8 @@ def run_probe(root, identity, request_name, skip_reason=''):
                 outcome['admission_receipts'].append(receipt)
                 device_command = native_env + command
                 gateway = ['python3', 'scripts/hcu_run.py', '--image', bound['image'],
-                    '--device', str(bound['hcu']), '--timeout', str(timeout), '--queue-timeout', '300',
+                    '--device', str(bound['hcu']), *(['--expected-pci', bound['hcu_pci']] if kind == 'development' else []),
+                    '--timeout', str(timeout), '--queue-timeout', '300',
                     '--latest-start-epoch', str(deadline['search_stop_at_epoch'] - timeout - 30),
                     '--receipt', receipt, '--'] + device_command
                 with (folder / (stage + '.log')).open('x') as log:

@@ -18,7 +18,7 @@ if stopped(b):raise SystemExit('batch STOP: no device admission')
 if a.phase=='search' and (R/'campaign/SEARCH_CLOSE.json').exists():raise SystemExit('search-close request pending; no device admission')
 # Siblings on the card queue for its lock; confirmation is attempted once, so it waits as long as the phase still admits it.
 queue=300 if a.phase=='search' else max(1,min(3600,int(latest-time.time())))
-cmd=['python3','scripts/hcu_run.py','--image',b['image'],'--device',str(b['hcu']),'--timeout',str(timeout),'--queue-timeout',str(queue),'--latest-start-epoch',str(latest),'--receipt',str((folder/'admission.json').relative_to(R)),'--','env','TRITON_F32_DEFAULT=ieee','TRITON_CACHE_DIR=/work/.local/triton-cache','python3','campaign/development_device.py','--emission',str((folder/'emission.json').relative_to(R)),'--output',str((folder/'observed.pt').relative_to(R))]
+cmd=['python3','scripts/hcu_run.py','--image',b['image'],'--device',str(b['hcu']),'--expected-pci',b['hcu_pci'],'--timeout',str(timeout),'--queue-timeout',str(queue),'--latest-start-epoch',str(latest),'--receipt',str((folder/'admission.json').relative_to(R)),'--','env','TRITON_F32_DEFAULT=ieee','TRITON_CACHE_DIR=/work/.local/triton-cache','python3','campaign/development_device.py','--emission',str((folder/'emission.json').relative_to(R)),'--output',str((folder/'observed.pt').relative_to(R))]
 with (folder/'device.log').open('x') as log:code=subprocess.call(cmd,stdout=log,stderr=subprocess.STDOUT)
 if code:
  reason=device_failure_is_infrastructure(folder)
@@ -33,7 +33,7 @@ elif stopped(b) or (a.phase=='search' and (R/'campaign/SEARCH_CLOSE.json').exist
 else:
  with (folder/'kernel-time-pmc.txt').open('x') as pmc:pmc.write('pmc: GPUBusy\n')
  rel=lambda name:str((folder/name).relative_to(R))
- cmd=['python3','scripts/hcu_run.py','--image',b['image'],'--device',str(b['hcu']),'--timeout',str(timeout),'--queue-timeout','300','--latest-start-epoch',str(stop-timeout-30-reserve),'--receipt',rel('kernel-time-admission.json'),'--','env','TRITON_F32_DEFAULT=ieee','TRITON_CACHE_DIR=/work/.local/triton-cache','/opt/dtk/rocprofiler/bin/rocprof','-i','/work/'+rel('kernel-time-pmc.txt'),'--timestamp','on','-o','/work/'+rel('kernel-time.csv'),'python3','campaign/development_kernel_time.py','--emission',rel('emission.json')]
+ cmd=['python3','scripts/hcu_run.py','--image',b['image'],'--device',str(b['hcu']),'--expected-pci',b['hcu_pci'],'--timeout',str(timeout),'--queue-timeout','300','--latest-start-epoch',str(stop-timeout-30-reserve),'--receipt',rel('kernel-time-admission.json'),'--','env','TRITON_F32_DEFAULT=ieee','TRITON_CACHE_DIR=/work/.local/triton-cache','/opt/dtk/rocprofiler/bin/rocprof','-i','/work/'+rel('kernel-time-pmc.txt'),'--timestamp','on','-o','/work/'+rel('kernel-time.csv'),'python3','campaign/development_kernel_time.py','--emission',rel('emission.json')]
  with (folder/'kernel-time.log').open('x') as log:pcode=subprocess.call(cmd,stdout=log,stderr=subprocess.STDOUT)
  if pcode:
   note='profiled kernel-time pass exited %d; see kernel-time.log'%pcode
