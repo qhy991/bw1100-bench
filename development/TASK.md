@@ -27,11 +27,12 @@ original campaign/compiler-actions paths so emission retains their origin. For C
 The adapter preserves your source, canonical assessment, unchanged emitted kernel,
 all original oracle checks, unprofiled callable samples and device release receipts.
 Do not edit the Compiler, oracle, input snapshots, controls, prior evaluations or gateway.
-Write your own analysis, journals and dossiers under a notes/ directory (campaign/notes/ or
-.local/profile/<id>/notes/), or with any extension but .json. Every other .json file under
-campaign/ and .local/ is read as a device-release record: one the checks cannot parse
-withholds this Run's release and stops your HCU at the end of your search, even when every
-device job released cleanly.
+Write your own analysis, journals and dossiers as .md or .txt, or under a real notes/
+directory (campaign/notes/ or .local/profile/<id>/notes/, not a symlink). Every other .json
+file under campaign/ and .local/ is read as a device-release record: one the checks cannot
+parse withholds this Run's release and stops your HCU at the end of your search, even when
+every device job released cleanly. A .json file under notes/ is still read if it quotes the
+gateway schema or an admission_receipts field, so prefer .md for prose.
 A faster diagnostic sample is not a community-baseline win or an independent Bench score.
 Each accepted evaluation also writes kernel-time-outcome.json beside outcome.json:
 kernel_time is the rocprof device duration of the generated kernels on the primary case,
