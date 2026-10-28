@@ -26,8 +26,25 @@ def pinned_image(root):
     raise ValueError('no Run binding declares the pinned image: ' + ' or '.join(BINDINGS))
 
 
+PCI = re.compile('[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\\.[0-7]')
+
+
+def pinned_pci(root):
+    """The physical card a development Run is bound to, or '' for a Bench Run without one."""
+    path = Path(root) / BINDINGS[0]
+    if not path.is_file():
+        return ''
+    pci = json.loads(path.read_text()).get('hcu_pci')
+    if not isinstance(pci, str) or PCI.fullmatch(pci) is None:
+        raise ValueError(BINDINGS[0] + ' does not bind an exact hcu_pci bus id')
+    return pci
+
+
 if __name__ == '__main__':
+    arguments = sys.argv[1:]
+    pci = arguments[:1] == ['--pci']
+    root = (arguments[1:] if pci else arguments) or [Path(__file__).resolve().parents[1]]
     try:
-        print(pinned_image(sys.argv[1] if len(sys.argv) > 1 else Path(__file__).resolve().parents[1]))
+        print(pinned_pci(root[0]) if pci else pinned_image(root[0]))
     except ValueError as error:
         raise SystemExit(str(error))

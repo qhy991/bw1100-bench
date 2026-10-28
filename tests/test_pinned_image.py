@@ -18,16 +18,20 @@ ROOT = Path(__file__).resolve().parents[1]
 PINNED = 'sha256:' + '3ad0ae71' * 8
 
 
-def run_root(temporary, binding='campaign/development-binding.json', image=PINNED):
+def run_root(temporary, binding='campaign/development-binding.json', image=PINNED, pci='0000:ca:00.0'):
     root = Path(temporary)
     (root / 'scripts').mkdir()
     for name in ('rocprof.sh', 'pinned_image.py', 'verify_rocprof_csv.py'):
         shutil.copy(ROOT / 'scripts' / name, root / 'scripts' / name)
     (root / 'scripts/__init__.py').write_text('')
     # A stub gateway records the image it was handed and stops: no GPU, no docker.
-    (root / 'scripts/dtk.sh').write_text('printf "%s\\n" "$2" > "$(dirname "$0")/../dtk-image.txt"; exit 7\n')
+    (root / 'scripts/dtk.sh').write_text('printf "%s\\n" "$2" > "$(dirname "$0")/../dtk-image.txt"; '
+                                         'printf "%s\\n" "${BWBENCH_EXPECTED_PCI-unset}" > "$(dirname "$0")/../dtk-pci.txt"; exit 7\n')
     (root / binding).parent.mkdir(parents=True, exist_ok=True)
-    (root / binding).write_text(json.dumps({'image': image, 'hcu': 5}))
+    record = {'image': image, 'hcu': 5}
+    if pci is not None:
+        record['hcu_pci'] = pci
+    (root / binding).write_text(json.dumps(record))
     (root / 'pmc.txt').write_text('pmc: Wavefronts GPUBusy\n')
     return root
 
@@ -61,6 +65,20 @@ class PinnedImageTests(unittest.TestCase):
                              'Kernel', 'python3', 'harness.py')
             self.assertEqual(result.returncode, 7, result.stderr)
             self.assertEqual((root / 'dtk-image.txt').read_text().strip(), PINNED)
+
+    def test_the_gateway_receives_the_bound_physical_card(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = run_root(temporary)
+            rocprof(root, 'admission.json', 'pmc.txt', 'reports/metrics.csv', 'Kernel', 'python3', 'harness.py')
+            self.assertEqual((root / 'dtk-pci.txt').read_text().strip(), '0000:ca:00.0')
+
+    def test_a_development_binding_without_its_card_is_refused_before_the_gateway(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = run_root(temporary, pci=None)
+            result = rocprof(root, 'admission.json', 'pmc.txt', 'reports/metrics.csv', 'Kernel', 'python3', 'harness.py')
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('hcu_pci', result.stderr)
+            self.assertFalse((root / 'dtk-image.txt').exists())
 
     def test_a_caller_supplied_image_never_reaches_the_gateway(self):
         # The exact R9 call shape, and a retyped digest like R6's.

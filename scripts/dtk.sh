@@ -28,6 +28,9 @@ case "$mode" in
     if [[ -n ${BWBENCH_LATEST_START_EPOCH:-} ]]; then
       gpu_args+=(--latest-start-epoch "$BWBENCH_LATEST_START_EPOCH")
     fi
+    if [[ -n ${BWBENCH_EXPECTED_PCI:-} ]]; then
+      gpu_args+=(--expected-pci "$BWBENCH_EXPECTED_PCI")
+    fi
     exec python3 "$root/scripts/hcu_run.py" "${gpu_args[@]}" -- "$@"
     ;;
   *) printf 'Unknown mode: %s\n' "$mode" >&2; exit 2 ;;

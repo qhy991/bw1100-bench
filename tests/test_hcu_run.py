@@ -1,8 +1,10 @@
 """Focused safety checks for the standalone HCU admission boundary."""
 
+import contextlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -170,6 +172,7 @@ class HcuRunTests(unittest.TestCase):
                  mock.patch.object(hcu_run, 'LOCK_DIR', root / '.locks'), \
                  mock.patch.object(sys, 'argv', argv), \
                  mock.patch.object(hcu_run.subprocess, 'check_output', side_effect=output), \
+                 mock.patch.object(hcu_run, '_runtime_binding', return_value={'pci_bus_id': '0000:9f:00.0'}), \
                  mock.patch.object(hcu_run.subprocess, 'run') as run:
                 with self.assertRaisesRegex(RuntimeError, 'not idle'):
                     hcu_run.main()
@@ -418,6 +421,84 @@ class HcuRunTests(unittest.TestCase):
                     hcu_run.main()
             self.assertTrue(stop.exists())
             self.assertFalse((root / 'campaign/results/job.json').exists())
+
+    @contextlib.contextmanager
+    def bound_to(self, root, expected, pci='0000:ca:00.0', vram='0%'):
+        argv = ['hcu_run.py', '--image', 'image', '--device', '4', '--receipt', 'campaign/results/job.json']
+        if expected is not None:
+            argv += ['--expected-pci', expected]
+        argv += ['--', 'true']
+        binding = {'runtime': 'dcu', 'device_selector': '4', 'pci_bus_id': pci,
+                   'cdi_device': 'c-3000.com/hcu=4', 'render_node': '/dev/dri/renderD133'}
+        with mock.patch.object(hcu_run, 'ROOT', root), \
+             mock.patch.object(hcu_run, 'LOCK_DIR', root / '.locks'), \
+             mock.patch.dict(hcu_run.os.environ, {'BWBENCH_STOP_FILE': str(root / 'STOP.json')}), \
+             mock.patch.object(sys, 'argv', argv), \
+             mock.patch.object(hcu_run.subprocess, 'check_output', return_value='sha256:pinned'), \
+             mock.patch.object(hcu_run, '_vram', return_value=vram), \
+             mock.patch.object(hcu_run, '_kfd_visible', return_value=False), \
+             mock.patch.object(hcu_run, '_runtime_binding', return_value=binding), \
+             mock.patch.object(hcu_run.subprocess, 'run') as run:
+            yield run
+
+    def test_a_renumbered_card_is_refused_before_admission_without_a_stop(self):
+        """node4 2026-10-28: a card left the bus and hy-smi indices shifted onto other cards."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with self.bound_to(root, '0000:b1:00.0') as run:
+                with self.assertRaisesRegex(RuntimeError, '^selected HCU is not the expected physical PCI device; no GPU admitted$'), \
+                     mock.patch('sys.stdout', new_callable=io.StringIO) as out:
+                    hcu_run.main()
+                record = json.loads(out.getvalue().strip().splitlines()[-1])
+                self.assertEqual((record['observed_pci'], record['expected_pci']), ('0000:ca:00.0', '0000:b1:00.0'))
+                self.assertFalse(any(call.args and call.args[0][:2] == ['docker', 'run'] for call in run.call_args_list))
+            self.assertFalse((root / 'campaign/results/job.json').exists())
+            self.assertFalse((root / 'STOP.json').exists())
+
+    def test_a_renumbered_index_on_another_users_busy_card_reads_as_renumbered(self):
+        # The shifted index can name a card someone else is using; refusing it as "not idle"
+        # would read as a candidate failure instead of halting the planned card.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with self.bound_to(root, '0000:b1:00.0', vram='37%'):
+                with self.assertRaisesRegex(RuntimeError, 'not the expected physical PCI device'), \
+                     mock.patch('sys.stdout', new_callable=io.StringIO):
+                    hcu_run.main()
+            self.assertFalse((root / 'STOP.json').exists())
+
+    def test_the_expected_card_is_admitted_and_its_pci_recorded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with self.bound_to(root, '0000:CA:00.0'), \
+                 mock.patch.object(hcu_run, '_write_receipt', side_effect=RuntimeError('stop here')) as receipt:
+                with self.assertRaisesRegex(RuntimeError, 'stop here'):
+                    hcu_run.main()
+            self.assertEqual(receipt.call_args.args[1]['expected_pci'], '0000:ca:00.0')
+            self.assertEqual(receipt.call_args.args[1]['runtime_device_binding']['pci_bus_id'], '0000:ca:00.0')
+
+    def test_dtk_gpu_forwards_the_expected_pci(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'scripts').mkdir()
+            (root / 'scripts/dtk.sh').write_bytes((MODULE.parent / 'dtk.sh').read_bytes())
+            (root / 'scripts/hcu_run.py').write_text('import json,sys\nprint(json.dumps(sys.argv[1:]))\n')
+            environment = dict(os.environ, HIP_VISIBLE_DEVICES='4')
+            for expected, forwarded in ((None, False), ('0000:ca:00.0', True)):
+                if expected:
+                    environment['BWBENCH_EXPECTED_PCI'] = expected
+                result = subprocess.run(['bash', str(root / 'scripts/dtk.sh'), 'gpu', 'image', 'campaign/r.json', 'true'],
+                                        capture_output=True, text=True, env=environment, check=True)
+                argv = json.loads(result.stdout)
+                with self.subTest(expected=expected):
+                    self.assertEqual('--expected-pci' in argv, forwarded)
+                    if forwarded:
+                        self.assertEqual(argv[argv.index('--expected-pci') + 1], expected)
+
+    def test_an_expected_pci_that_is_not_a_bus_id_is_a_caller_error(self):
+        argv = ['hcu_run.py', '--image', 'i', '--device', '4', '--receipt', 'campaign/r.json',
+                '--expected-pci', 'ca:00', '--', 'true']
+        with mock.patch.object(sys, 'argv', argv), self.assertRaises(SystemExit):
+            hcu_run.main()
 
     def test_release_observer_denial_writes_unknown_terminal_and_stops_queue(self):
         with tempfile.TemporaryDirectory() as tmp:

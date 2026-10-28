@@ -303,6 +303,9 @@ def main():
                         help='wait up to this many seconds for the existing HCU lock (0 fails fast)')
     parser.add_argument('--latest-start-epoch', type=float,
                         help='refuse device execution at/after this task-owned node deadline')
+    parser.add_argument('--expected-pci',
+                        help='refuse unless --device resolves to this physical PCI bus id; hy-smi '
+                             'indices shift when a card leaves the bus (node4, 2026-10-28)')
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command[1:] if args.command and args.command[0] == '--' else args.command
@@ -313,6 +316,9 @@ def main():
     if args.latest_start_epoch is not None and (
             not math.isfinite(args.latest_start_epoch) or args.latest_start_epoch <= 0):
         parser.error('latest start epoch must be finite and positive')
+    if args.expected_pci is not None and not re.fullmatch(r'[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]',
+                                                           args.expected_pci.lower()):
+        parser.error('expected PCI must be domain:bus:device.function')
     override = _visibility_override(command)
     if override:
         print(json.dumps({'status': 'refused_before_admission', 'reason': 'device_visibility_override',
@@ -331,6 +337,20 @@ def main():
     try:
         queue_wait_seconds = _acquire_hcu_lock(fd, args.queue_timeout, args.latest_start_epoch)
         try:
+            binding = _runtime_binding(args.device)
+        except (OSError, RuntimeError, subprocess.SubprocessError, ValueError, KeyError) as error:
+            _stop_for_unknown_release(None, 'physical_device_binding_failed: ' + str(error))
+            raise
+        # Before observing the card: after a renumbering the index may name another user's
+        # busy card, and that must read as a renumbering, not as a held card.
+        if args.expected_pci is not None and binding['pci_bus_id'] != args.expected_pci.lower():
+            # A renumbered card, not a held one: nothing was admitted. The ids go on their own
+            # line so the last line stays the fixed refusal the adapter matches.
+            print(json.dumps({'status': 'refused_before_admission', 'reason': 'hcu_pci_mismatch',
+                              'device': args.device, 'observed_pci': binding['pci_bus_id'],
+                              'expected_pci': args.expected_pci.lower()}), flush=True)
+            raise RuntimeError('selected HCU is not the expected physical PCI device; no GPU admitted')
+        try:
             image_id = subprocess.check_output(
                 ['docker', 'image', 'inspect', args.image, '--format', '{{.Id}}'],
                 universal_newlines=True, timeout=15).strip()
@@ -342,12 +362,6 @@ def main():
         if before_vram != '0%' or before_kfd:
             raise RuntimeError('selected HCU is not idle by observed VRAM/KFD check')
         # Device/image probes may consume the remaining admission window too.
-        _check_latest_start(args.latest_start_epoch)
-        try:
-            binding = _runtime_binding(args.device)
-        except (OSError, RuntimeError, subprocess.SubprocessError, ValueError, KeyError) as error:
-            _stop_for_unknown_release(None, 'physical_device_binding_failed: ' + str(error))
-            raise
         _check_latest_start(args.latest_start_epoch)
         _check_stop()
         job_id = 'bw-' + uuid.uuid4().hex[:12]
@@ -372,6 +386,7 @@ def main():
             'queue_timeout_s': args.queue_timeout,
             'queue_wait_s': queue_wait_seconds,
             'latest_start_epoch': args.latest_start_epoch,
+            'expected_pci': args.expected_pci.lower() if args.expected_pci else None,
             'started_at': started,
         }
         _write_receipt(receipt, admission)
