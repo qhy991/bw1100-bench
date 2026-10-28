@@ -310,13 +310,19 @@ def run_probe(root, identity, request_name, skip_reason=''):
                 outcome['admission_receipts'].append(receipt)
                 device_command = native_env + command
                 gateway = ['python3', 'scripts/hcu_run.py', '--image', bound['image'],
-                    '--device', str(bound['hcu']), '--timeout', str(timeout), '--queue-timeout', '300',
+                    '--device', str(bound['hcu']), *(['--expected-pci', bound['hcu_pci']] if kind == 'development' else []),
+                    '--timeout', str(timeout), '--queue-timeout', '300',
                     '--latest-start-epoch', str(deadline['search_stop_at_epoch'] - timeout - 30),
                     '--receipt', receipt, '--'] + device_command
                 with (folder / (stage + '.log')).open('x') as log:
                     code = subprocess.call(gateway, cwd=root, env=env, stdout=log, stderr=subprocess.STDOUT)
                 if kind == 'development' and code:
-                    from campaign.development_stop import refused_before_admission
+                    from campaign.development_stop import (HCU_PCI_MISMATCH_STOP, halt as halt_card,
+                                                           hcu_pci_mismatch, refused_before_admission)
+                    if hcu_pci_mismatch(folder, stage + '-admission.json', stage + '.log'):
+                        outcome['admission_receipts'].remove(receipt)
+                        halt_card(bound, HCU_PCI_MISMATCH_STOP, relative)
+                        raise ValueError(stage + ' refused before admission: ' + HCU_PCI_MISMATCH_STOP)
                     # The gateway refused before admission (lock wait, an existing STOP, an expired
                     # window or an occupied card): there is no release to verify, so the probe
                     # fails without stopping the card.

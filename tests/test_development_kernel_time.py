@@ -119,7 +119,7 @@ class OwnerKernelTimePass(unittest.TestCase):
         for name in ('development_evaluate_owner.py', 'development_stop.py'):
             shutil.copyfile(ROOT / 'development' / name, temp / 'campaign' / name)
         (temp / 'campaign/development-binding.json').write_text(json.dumps(dict(
-            image='img', hcu=5, batch_stop_file=str(temp / 'STOP.json'))))
+            image='img', hcu=5, hcu_pci='0000:ca:00.0', batch_stop_file=str(temp / 'STOP.json'))))
         (temp / 'campaign/deadline.json').write_text(json.dumps(dict(
             search_stop_at_epoch=stop_at, stop_at_epoch=stop_at)))
         folder = temp / 'campaign/evaluations/e1'
@@ -153,6 +153,14 @@ class OwnerKernelTimePass(unittest.TestCase):
         self.stop_file = temp / 'STOP.json'
         self.assertEqual(json.loads((folder / 'outcome.json').read_text()), dict(id='e1', status='accepted'))
         return stop.exception.code, calls, json.loads((folder / 'kernel-time-outcome.json').read_text()), folder
+
+    def test_every_device_admission_names_the_expected_physical_card(self):
+        _, calls, _, _ = self.run_owner()
+        gateway = [argv for argv in calls if 'scripts/hcu_run.py' in argv]
+        self.assertEqual(len(gateway), 2)
+        for argv in gateway:
+            self.assertEqual(argv[argv.index('--device') + 1], '5')
+            self.assertEqual(argv[argv.index('--expected-pci') + 1], '0000:ca:00.0')
 
     def test_profiled_pass_records_kernel_time_with_a_txt_pmc_input(self):
         code, calls, outcome, folder = self.run_owner()

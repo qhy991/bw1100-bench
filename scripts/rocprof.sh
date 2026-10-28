@@ -21,6 +21,9 @@ kernel_regex=$4
 shift 4
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 image=$(python3 "$root/scripts/pinned_image.py" "$root")
+# The binding's physical card, so a renumbered index is refused before admission.
+expected_pci=$(python3 "$root/scripts/pinned_image.py" --pci "$root")
+export BWBENCH_EXPECTED_PCI=$expected_pci
 for path in "$pmc" "$report"; do
   case "$path" in
     /*|..|../*|*/../*|*/..) printf 'path must stay relative to the repository: %s\n' "$path" >&2; exit 2 ;;

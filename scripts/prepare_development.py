@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT))
 from campaign.binding import GATEWAY_FILES, clean, git, read
 from development.development_binding import ADAPTER_SCRIPTS, BUDGET, KIND, inherited_path, render_agents, render_task, validate_plan
 from scripts.json_stream import RECEIPT_REFUSED_DIRS, RELEASE_ROOTS
+from development.development_stop import HCU_PCI_MISMATCH
 from scripts.prepare_bench import clone, gateway_sources, new_json, source_identity
 
 # What the pinned gateway's _receipt_paths must refuse and admit (#44, #45 review).
@@ -59,6 +60,20 @@ def require_receipt_scope(gateway_source, commit):
                 raise ValueError(refusal + 'it refuses ' + name + ': %r' % error) from error
 
 
+def require_pci_pinning(gateway_files, commit):
+    # Every development admission passes --expected-pci, from the owner and probe directly and
+    # from rocprof.sh through dtk.sh gpu. A gateway that does not parse it would fail each one
+    # at argparse, which the adapter would read as a candidate failure; one whose rocprof.sh
+    # or dtk.sh drops it would admit a renumbered card for profiling.
+    required = {'scripts/hcu_run.py': (b"'--expected-pci'", HCU_PCI_MISMATCH.encode()),
+                'scripts/rocprof.sh': (b'pinned_image.py" --pci', b'export BWBENCH_EXPECTED_PCI='),
+                'scripts/dtk.sh': (b'--expected-pci "$BWBENCH_EXPECTED_PCI"',)}
+    for relative, texts in required.items():
+        if not all(text in gateway_files[relative] for text in texts):
+            raise ValueError('Pinned gateway ' + commit + ' ' + relative + ' does not refuse a renumbered card '
+                             '(--expected-pci); pin a gateway at or after the expected-PCI change')
+
+
 def prepare(plan_path, contracts_path, disposition_path, host, output):
     plan, contracts = read(plan_path), read(contracts_path)
     validate_plan(plan, contracts)
@@ -73,6 +88,7 @@ def prepare(plan_path, contracts_path, disposition_path, host, output):
     clean(gateway, config['gateway']['commit'])
     gateway_files = gateway_sources(gateway, config['gateway']['commit'])
     require_receipt_scope(gateway_files['scripts/hcu_run.py'], config['gateway']['commit'])
+    require_pci_pinning(gateway_files, config['gateway']['commit'])
     selected = [row for row in plan['assignments'] if row['host'] == host]
     if output.exists() or not selected or any(Path(row['root']).exists() for row in selected):
         raise ValueError('Preparation requires a nonempty host subset and fresh output/Run roots')
@@ -114,6 +130,7 @@ def prepare(plan_path, contracts_path, disposition_path, host, output):
         for name in ADAPTER_SCRIPTS:
             shutil.copyfile(ROOT / 'development' / name, run / 'campaign' / name)
         binding = dict(task=task, root=str(run), host=host, home=config['home'], hcu=row['hcu'],
+            hcu_pci=config['hcu_pci'][str(row['hcu'])],
             compiler=plan['compiler'], gateway=config['gateway']['commit'], image=config['image'],
             gateway_files=list(GATEWAY_FILES), **plan['controls'],
             **{key: contract[key] for key in ('rows', 'columns', 'depth', 'case_ids', 'abi')},

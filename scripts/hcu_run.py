@@ -121,6 +121,10 @@ def main():
     parser.add_argument('--device', required=True, type=int)
     parser.add_argument('--receipt', required=True)
     parser.add_argument('--timeout', type=int, default=180)
+    # Runs execute the pinned gateway, which resolves --device to its physical card and refuses
+    # a mismatch with 'selected HCU is not the expected physical PCI device; no GPU admitted'.
+    # This copy has no PCI binding to compare against; it only accepts the argument.
+    parser.add_argument('--expected-pci')
     parser.add_argument('command', nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = args.command[1:] if args.command and args.command[0] == '--' else args.command

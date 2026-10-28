@@ -51,7 +51,7 @@ class NativeProbeTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name).resolve()
         self.request = source_fixture(self.root)
-        self.bound = dict(task='L1/fixture', image='sha256:' + 'a' * 64, hcu=4,
+        self.bound = dict(task='L1/fixture', image='sha256:' + 'a' * 64, hcu=4, hcu_pci='0000:ca:00.0',
                           compiler_commit='b' * 40)
         started = time.time() - 5400
         self.deadline = dict(started_at_epoch=started, search_stop_at_epoch=started + 9000,
@@ -79,6 +79,10 @@ class NativeProbeTests(unittest.TestCase):
         stage = Path(receipt_name).name.split('-')[0]
         if self.failure == 'missing_admission':
             return 0
+        if self.failure == 'pci_mismatch':
+            kwargs['stdout'].write('{"status": "refused_before_admission", "reason": "hcu_pci_mismatch"}\n'
+                                   'RuntimeError: ' + development_stop.HCU_PCI_MISMATCH + '\n')
+            return 1
         if self.failure == 'refusal_other_prefix':
             kwargs['stdout'].write('candidate: ' + development_stop.LOCK_WAIT_TIMEOUT + '\n')
             return 1
@@ -237,6 +241,34 @@ class NativeProbeTests(unittest.TestCase):
                     self.assertTrue(development_stop.stopped(self.bound))
                 stop.unlink()
                 self.failure = self.damage = None
+
+    def test_a_development_probe_names_its_physical_card_and_a_bench_probe_does_not(self):
+        self.bound.update(compiler=self.bound['compiler_commit'],
+                          batch_stop_file=str(self.root / 'STOP-hcu4.json'))
+        for kind, expected in (('development', '0000:ca:00.0'), ('bench', None)):
+            self.calls = []
+            with self.subTest(kind=kind), patch.dict(sys.modules, {'campaign.development_stop': development_stop}):
+                self.run_probe('pci-' + kind, kind=kind)
+                gateway = [argv for argv in self.calls if argv[:2] == ['python3', 'scripts/hcu_run.py']]
+                self.assertTrue(gateway)
+                for argv in gateway:
+                    if expected is None:
+                        self.assertNotIn('--expected-pci', argv)
+                    else:
+                        self.assertEqual(argv[argv.index('--expected-pci') + 1], expected)
+
+    def test_a_renumbered_card_halts_the_card_with_its_own_reason(self):
+        self.bound.update(compiler=self.bound['compiler_commit'],
+                          batch_stop_file=str(self.root / 'STOP-hcu4.json'))
+        self.failure = 'pci_mismatch'
+        with patch.dict(sys.modules, {'campaign.development_stop': development_stop}):
+            result = self.run_probe('pci-mismatch', kind='development')
+        self.failure = None
+        self.assertEqual(result['status'], 'failed')
+        stop = json.loads(Path(self.bound['batch_stop_file']).read_text())
+        self.assertEqual(stop['reason'], development_stop.HCU_PCI_MISMATCH_STOP)
+        outcome = json.loads((self.root / 'campaign/engineering/pci-mismatch/outcome.json').read_text())
+        self.assertEqual(outcome['admission_receipts'], [])
 
     def test_a_reserved_directory_name_is_refused_before_any_probe_work(self):
         self.bound.update(compiler=self.bound['compiler_commit'],
