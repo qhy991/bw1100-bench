@@ -1,9 +1,10 @@
-import contextlib
 """Focused safety checks for the standalone HCU admission boundary."""
 
+import contextlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -444,8 +445,11 @@ class HcuRunTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             with self.bound_to(root, '0000:b1:00.0') as run:
-                with self.assertRaisesRegex(RuntimeError, 'not the expected 0000:b1:00.0; no GPU admitted'):
+                with self.assertRaisesRegex(RuntimeError, '^selected HCU is not the expected physical PCI device; no GPU admitted$'), \
+                     mock.patch('sys.stdout', new_callable=io.StringIO) as out:
                     hcu_run.main()
+                record = json.loads(out.getvalue().strip().splitlines()[-1])
+                self.assertEqual((record['observed_pci'], record['expected_pci']), ('0000:ca:00.0', '0000:b1:00.0'))
                 self.assertFalse(any(call.args and call.args[0][:2] == ['docker', 'run'] for call in run.call_args_list))
             self.assertFalse((root / 'campaign/results/job.json').exists())
             self.assertFalse((root / 'STOP.json').exists())
@@ -459,6 +463,24 @@ class HcuRunTests(unittest.TestCase):
                     hcu_run.main()
             self.assertEqual(receipt.call_args.args[1]['expected_pci'], '0000:ca:00.0')
             self.assertEqual(receipt.call_args.args[1]['runtime_device_binding']['pci_bus_id'], '0000:ca:00.0')
+
+    def test_dtk_gpu_forwards_the_expected_pci(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'scripts').mkdir()
+            (root / 'scripts/dtk.sh').write_bytes((MODULE.parent / 'dtk.sh').read_bytes())
+            (root / 'scripts/hcu_run.py').write_text('import json,sys\nprint(json.dumps(sys.argv[1:]))\n')
+            environment = dict(os.environ, HIP_VISIBLE_DEVICES='4')
+            for expected, forwarded in ((None, False), ('0000:ca:00.0', True)):
+                if expected:
+                    environment['BWBENCH_EXPECTED_PCI'] = expected
+                result = subprocess.run(['bash', str(root / 'scripts/dtk.sh'), 'gpu', 'image', 'campaign/r.json', 'true'],
+                                        capture_output=True, text=True, env=environment, check=True)
+                argv = json.loads(result.stdout)
+                with self.subTest(expected=expected):
+                    self.assertEqual('--expected-pci' in argv, forwarded)
+                    if forwarded:
+                        self.assertEqual(argv[argv.index('--expected-pci') + 1], expected)
 
     def test_an_expected_pci_that_is_not_a_bus_id_is_a_caller_error(self):
         argv = ['hcu_run.py', '--image', 'i', '--device', '4', '--receipt', 'campaign/r.json',

@@ -355,9 +355,12 @@ def main():
             _stop_for_unknown_release(None, 'physical_device_binding_failed: ' + str(error))
             raise
         if args.expected_pci is not None and binding['pci_bus_id'] != args.expected_pci.lower():
-            # A renumbered card, not a held one: nothing was admitted, so no STOP is written.
-            raise RuntimeError('HCU %d is PCI %s, not the expected %s; no GPU admitted'
-                               % (args.device, binding['pci_bus_id'], args.expected_pci.lower()))
+            # A renumbered card, not a held one: nothing was admitted. The ids go on their own
+            # line so the last line stays the fixed refusal the adapter matches.
+            print(json.dumps({'status': 'refused_before_admission', 'reason': 'hcu_pci_mismatch',
+                              'device': args.device, 'observed_pci': binding['pci_bus_id'],
+                              'expected_pci': args.expected_pci.lower()}), flush=True)
+            raise RuntimeError('selected HCU is not the expected physical PCI device; no GPU admitted')
         _check_latest_start(args.latest_start_epoch)
         _check_stop()
         job_id = 'bw-' + uuid.uuid4().hex[:12]
