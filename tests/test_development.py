@@ -181,17 +181,25 @@ class DevelopmentTests(unittest.TestCase):
 
     def test_a_pinned_gateway_that_cannot_pin_the_physical_card_prepares_no_run(self):
         """node4 renumbered its HCUs (2026-10-28): every development admission passes
-        --expected-pci, so a gateway that does not parse it and refuse a mismatch is refused."""
+        --expected-pci, directly or through rocprof.sh and dtk.sh gpu, so a gateway that drops
+        it on any of those paths, or does not refuse a mismatch, is refused."""
         from development.development_stop import HCU_PCI_MISMATCH
-        source = subprocess.run(['git', '-C', str(ROOT), 'show', 'origin/task/dcu-gateway-expected-pci:scripts/hcu_run.py'],
-                                capture_output=True, text=True)
-        if source.returncode != 0:
-            self.skipTest('the expected-PCI gateway branch is not reachable here')
-        prepare.require_pci_pinning(source.stdout.encode(), 'expected-pci')
-        for change, text in (('no_flag', source.stdout.replace("'--expected-pci'", "'--expected-card'")),
-                             ('other_refusal', source.stdout.replace(HCU_PCI_MISMATCH, 'card differs'))):
-            with self.subTest(change=change), self.assertRaisesRegex(ValueError, 'does not refuse a renumbered card'):
-                prepare.require_pci_pinning(text.encode(), change)
+        files = {}
+        for relative in ('scripts/hcu_run.py', 'scripts/rocprof.sh', 'scripts/dtk.sh'):
+            source = subprocess.run(['git', '-C', str(ROOT), 'show', 'origin/task/dcu-gateway-expected-pci:' + relative],
+                                    capture_output=True)
+            if source.returncode != 0:
+                self.skipTest('the expected-PCI gateway branch is not reachable here')
+            files[relative] = source.stdout
+        prepare.require_pci_pinning(files, 'expected-pci')
+        changes = (('no_flag', 'scripts/hcu_run.py', b"'--expected-pci'", b"'--expected-card'"),
+                   ('other_refusal', 'scripts/hcu_run.py', HCU_PCI_MISMATCH.encode(), b'card differs'),
+                   ('rocprof_unpinned', 'scripts/rocprof.sh', b'export BWBENCH_EXPECTED_PCI=', b'BWBENCH_EXPECTED_PCI='),
+                   ('dtk_drops_it', 'scripts/dtk.sh', b'--expected-pci "$BWBENCH_EXPECTED_PCI"', b''))
+        for change, relative, old, new in changes:
+            self.assertIn(old, files[relative])
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, relative + ' does not refuse a renumbered card'):
+                prepare.require_pci_pinning({**files, relative: files[relative].replace(old, new)}, change)
 
     def test_preparation_refuses_a_pinned_gateway_without_expected_pci(self):
         adapter, plan, contracts = self.sources()

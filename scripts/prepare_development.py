@@ -60,12 +60,18 @@ def require_receipt_scope(gateway_source, commit):
                 raise ValueError(refusal + 'it refuses ' + name + ': %r' % error) from error
 
 
-def require_pci_pinning(gateway_source, commit):
-    # Every development admission passes --expected-pci; a gateway that does not parse it
-    # would fail each one at argparse, which the adapter would read as a candidate failure.
-    if not all(text in gateway_source for text in (b"'--expected-pci'", HCU_PCI_MISMATCH.encode())):
-        raise ValueError('Pinned gateway ' + commit + ' scripts/hcu_run.py does not refuse a renumbered card '
-                         '(--expected-pci); pin a gateway at or after the expected-PCI change')
+def require_pci_pinning(gateway_files, commit):
+    # Every development admission passes --expected-pci, from the owner and probe directly and
+    # from rocprof.sh through dtk.sh gpu. A gateway that does not parse it would fail each one
+    # at argparse, which the adapter would read as a candidate failure; one whose rocprof.sh
+    # or dtk.sh drops it would admit a renumbered card for profiling.
+    required = {'scripts/hcu_run.py': (b"'--expected-pci'", HCU_PCI_MISMATCH.encode()),
+                'scripts/rocprof.sh': (b'pinned_image.py" --pci', b'export BWBENCH_EXPECTED_PCI='),
+                'scripts/dtk.sh': (b'--expected-pci "$BWBENCH_EXPECTED_PCI"',)}
+    for relative, texts in required.items():
+        if not all(text in gateway_files[relative] for text in texts):
+            raise ValueError('Pinned gateway ' + commit + ' ' + relative + ' does not refuse a renumbered card '
+                             '(--expected-pci); pin a gateway at or after the expected-PCI change')
 
 
 def prepare(plan_path, contracts_path, disposition_path, host, output):
@@ -82,7 +88,7 @@ def prepare(plan_path, contracts_path, disposition_path, host, output):
     clean(gateway, config['gateway']['commit'])
     gateway_files = gateway_sources(gateway, config['gateway']['commit'])
     require_receipt_scope(gateway_files['scripts/hcu_run.py'], config['gateway']['commit'])
-    require_pci_pinning(gateway_files['scripts/hcu_run.py'], config['gateway']['commit'])
+    require_pci_pinning(gateway_files, config['gateway']['commit'])
     selected = [row for row in plan['assignments'] if row['host'] == host]
     if output.exists() or not selected or any(Path(row['root']).exists() for row in selected):
         raise ValueError('Preparation requires a nonempty host subset and fresh output/Run roots')

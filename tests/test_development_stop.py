@@ -87,6 +87,11 @@ class DevelopmentStopTests(unittest.TestCase):
         (self.folder / 'device.log').write_text(HCU_PCI_MISMATCH + '\nTriton compilation failed\n')
         self.assertNotEqual(device_failure_is_infrastructure(self.folder), HCU_PCI_MISMATCH_STOP)
 
+    def test_a_mismatch_line_after_an_admission_is_not_a_renumbering(self):
+        # Once a receipt exists the card was admitted, so the release check owns the decision.
+        (self.folder / 'device.log').write_text('RuntimeError: ' + HCU_PCI_MISMATCH + '\n')
+        self.assertNotEqual(device_failure_is_infrastructure(self.folder), HCU_PCI_MISMATCH_STOP)
+
     def test_unknown_release_takes_precedence_over_runtime_marker(self):
         (self.folder / 'device.log').write_text('device with id=6 is unavailable')
         after = self.folder / 'admission-terminal.json'
