@@ -102,5 +102,58 @@
       "rationale": "独立FP16输出投影GEMM；K=1280、N=51866，覆盖M=1的decode与大M，强调N尾块、tile选择和访存布局。",
       "smoke_workload_uuid": "f16caebe-a2e8-5550-b7ed-6efb043e1600"
     }
+  ],
+  "production_tasks": [
+    {
+      "id": "glm53-kda-verify",
+      "label": "GLM-5.3 KDA conv and recurrent verify seam",
+      "family": "stateful_attention",
+      "revision": "data2-v1",
+      "input_tier": "captured_native_admitted",
+      "score_M": 4,
+      "guard_M": [
+        8,
+        16,
+        32
+      ],
+      "runtime": "vllm-0.28.1+dtk2610 / gfx938 / TP1 local seam",
+      "contract": "production/README.md#kda-verify",
+      "acceptance": "strict_captured_equality",
+      "qualification": "device_and_graph_checks_required; numerical_tolerance_uncalibrated"
+    },
+    {
+      "id": "glm53-dsa-decode",
+      "label": "GLM-5.3 complete DSA indexer and sparse MLA",
+      "family": "sparse_attention",
+      "revision": "data2-v1",
+      "input_tier": "capture_pending",
+      "score_M": 4,
+      "guard_M": [
+        8,
+        16,
+        32
+      ],
+      "runtime": "vllm-0.28.1+dtk2610 / gfx938 / TP1 local seam",
+      "contract": "production/README.md#dsa-decode",
+      "acceptance": "unavailable",
+      "prerequisite": "DSA requires complete indexer and MLA captures, native replay admission, an independent oracle and evaluator; none is qualified in this revision."
+    },
+    {
+      "id": "glm53-lmhead",
+      "label": "GLM-5.3 BF16 full logits projection",
+      "family": "gemm",
+      "revision": "data2-v1",
+      "input_tier": "synthetic_activations_real_checkpoint_weight",
+      "score_M": 4,
+      "guard_M": [
+        8,
+        16,
+        32
+      ],
+      "runtime": "vllm-0.28.1+dtk2610 / gfx938 / TP1 local seam",
+      "contract": "production/README.md#lm-head",
+      "acceptance": "fp64_relative_and_native_qualified_argmax",
+      "qualification": "device_and_graph_checks_required; no_performance_result"
+    }
   ]
 }

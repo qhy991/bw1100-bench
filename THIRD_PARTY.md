@@ -21,3 +21,11 @@
 Do not commit `.data/`, `.deps/`, materialized problems, raw input tensors, model
 weights, or private machine inspection output. Publishing benchmark results does
 not grant permission to redistribute the underlying dataset.
+
+- GLM-5.3 production task adapters: extracted from the user-authored
+  `glm53-b1-decode-20261027` source at local base `1a054f6`, with its pending
+  capture-hook changes and the remote KDA/LM-head base `f1f2829` reconciled during
+  task design. The Bench includes only its own archive decoder, mathematical
+  reference and thin bindings to installed vLLM/vllm_hcu APIs. It does not
+  redistribute those packages, their kernels, model weights or captured data.
+  `production/README.md` owns the precise call and qualification boundaries.
