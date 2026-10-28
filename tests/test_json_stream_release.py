@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from development.development_control import released
 from scripts.bench_queue import release_audit
-from scripts.json_stream import RELEASE_ROOTS, RELEASE_UNWALKED_DIRS, read_json_stream
+from scripts.json_stream import RECEIPT_REFUSED_DIRS, RELEASE_ROOTS, RELEASE_UNWALKED_DIRS, read_json_stream
 
 _GATEWAY = importlib.util.spec_from_file_location('hcu_run', str(ROOT / 'scripts/hcu_run.py'))
 hcu_run = importlib.util.module_from_spec(_GATEWAY)
@@ -176,9 +176,9 @@ class StreamReleaseTests(unittest.TestCase):
     def test_every_directory_the_gateway_admits_is_read_by_both_release_checks(self):
         """#44: the gateway's receipt scope and the two release walks are one notion."""
         self.assertEqual(hcu_run.RECEIPT_ROOTS, RELEASE_ROOTS)
-        self.assertEqual(hcu_run.RECEIPT_UNWALKED_DIRS, RELEASE_UNWALKED_DIRS)
-        tops = (*RELEASE_ROOTS, *sorted(RELEASE_UNWALKED_DIRS), 'native', 'results', 'docs')
-        middles = ('', 'sub', 'evaluations/e1', *sorted(RELEASE_UNWALKED_DIRS))
+        self.assertEqual(hcu_run.RECEIPT_UNWALKED_DIRS, RECEIPT_REFUSED_DIRS)
+        tops = (*RELEASE_ROOTS, *sorted(RECEIPT_REFUSED_DIRS), 'native', 'results', 'docs')
+        middles = ('', 'sub', 'evaluations/e1', *sorted(RECEIPT_REFUSED_DIRS))
         admitted = []
         for top in tops:
             for middle in middles:
@@ -292,6 +292,33 @@ class StreamReleaseTests(unittest.TestCase):
         (self.root / 'campaign/notes/summary.json').write_bytes(
             json.dumps(admission('unreleased')).encode())
         self.gates(False)
+
+    def test_a_symlink_named_notes_is_judged_like_any_symlinked_directory(self):
+        """#51 review: TASK.md tells authors to create notes/, so a link by that name must not
+        hide a receipt the way a cache link may."""
+        write(self.root / 'campaign/admission.json', admission())
+        write(self.root / 'campaign/admission-terminal.json', terminal())
+        hidden = self.root / '.data/hidden'
+        write(hidden / 'admission.json', admission('unreleased'))
+        (self.root / 'campaign/notes').symlink_to(hidden, target_is_directory=True)
+        self.gates(False)
+
+    def test_an_unreadable_file_in_a_notes_or_cache_directory_withholds_the_release(self):
+        """The fail-closed rule receipt_shaped promises: unreadable bytes cannot be ruled out."""
+        write(self.root / 'campaign/admission.json', admission())
+        write(self.root / 'campaign/admission-terminal.json', terminal())
+        self.gates(True)
+        for name in ('campaign/notes/x.json', 'campaign/__pycache__/x.json'):
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('prose')
+            path.chmod(0)
+            try:
+                with self.subTest(name=name):
+                    self.gates(False)
+            finally:
+                path.chmod(0o600)
+                path.unlink()
 
     def test_a_receipt_shaped_file_inside_a_cache_still_withholds_the_release(self):
         write(self.root / 'campaign/admission.json', admission())

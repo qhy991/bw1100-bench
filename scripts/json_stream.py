@@ -28,14 +28,16 @@ GATEWAY_SCHEMA = 'bw1100-bench.hcu-admission.v1'
 # RELEASE_UNWALKED_DIRS. Inside, both checks fail closed without reading cache bytes as
 # records: a gateway pinned before #44 could write a receipt into campaign/__pycache__,
 # while Triton and AITER leave partial or binary .json files under .local (#45 review).
-# 'notes' is the author's own directory (r6 STOP-hcu5): an author wrote analysis prose into
-# .local/profile/.../analysis/summary.json with an invalid line, and the release check, unable
-# to read it as a record or admit it as captured output, halted a card no job was holding.
-# Under a notes/ directory a file is read only if it could be or hide a gateway record, and the
-# gateway refuses to write a receipt there, so nothing a check must see can hide behind it.
 RELEASE_ROOTS = ('campaign', '.local')
-RELEASE_UNWALKED_DIRS = frozenset(('.git', '.deps', '.data', 'triton-cache', 'aiter-jit-cache',
-                                   '__pycache__', 'notes'))
+RELEASE_UNWALKED_DIRS = frozenset(('.git', '.deps', '.data', 'triton-cache', 'aiter-jit-cache', '__pycache__'))
+# An author's notes directory (r6 STOP-hcu5: analysis prose in a .json inside the scope,
+# unreadable as a record, halted an HCU no job was holding). Unlike a cache it is created by
+# hand, so only a real directory gets the cache rule: its .json files are read only when
+# receipt_shaped admits them. A symlink named notes is judged like any symlinked directory,
+# and the gateway refuses a receipt below it (RECEIPT_UNWALKED_DIRS).
+AUTHOR_NOTES_DIR = 'notes'
+# Directories the gateway must refuse a receipt in: everything the walk does not read whole.
+RECEIPT_REFUSED_DIRS = RELEASE_UNWALKED_DIRS | {AUTHOR_NOTES_DIR}
 _RECEIPT_MARKERS = (GATEWAY_SCHEMA.encode(), b'admission_receipts')
 
 
@@ -77,6 +79,7 @@ def release_json_files(root, issue, note=lambda path, reason: None, whole_root=F
             parts = here.relative_to(root).parts
             in_scope = bool(parts) and parts[0] in RELEASE_ROOTS
             in_cache = in_scope and not RELEASE_UNWALKED_DIRS.isdisjoint(parts[1:])
+            in_notes = in_scope and AUTHOR_NOTES_DIR in parts[1:]
             kept = []
             for name in dirs:
                 child = here / name
@@ -93,7 +96,7 @@ def release_json_files(root, issue, note=lambda path, reason: None, whole_root=F
                 path = here / name
                 if not name.endswith('.json'):
                     continue
-                if not in_cache:
+                if not (in_cache or in_notes):
                     yield path
                 elif not path.is_symlink() and receipt_shaped(path):
                     yield path

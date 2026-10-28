@@ -51,6 +51,7 @@ p.add_argument('--phase', choices=['emit', 'compare', 'validate', 'compare-nativ
 p.add_argument('--result-phase', choices=['search', 'confirmation'], default='search')
 a = p.parse_args()
 assert re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,63}', a.id)
+if a.id == 'notes':raise SystemExit('notes is the author notes directory name; choose another evaluation id')
 os.chdir(R)
 b = reconcile(R, mounted=True)
 w = load_workload(R / 'campaign/workload.json')
