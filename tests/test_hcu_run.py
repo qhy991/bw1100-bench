@@ -172,6 +172,7 @@ class HcuRunTests(unittest.TestCase):
                  mock.patch.object(hcu_run, 'LOCK_DIR', root / '.locks'), \
                  mock.patch.object(sys, 'argv', argv), \
                  mock.patch.object(hcu_run.subprocess, 'check_output', side_effect=output), \
+                 mock.patch.object(hcu_run, '_runtime_binding', return_value={'pci_bus_id': '0000:9f:00.0'}), \
                  mock.patch.object(hcu_run.subprocess, 'run') as run:
                 with self.assertRaisesRegex(RuntimeError, 'not idle'):
                     hcu_run.main()
@@ -422,7 +423,7 @@ class HcuRunTests(unittest.TestCase):
             self.assertFalse((root / 'campaign/results/job.json').exists())
 
     @contextlib.contextmanager
-    def bound_to(self, root, expected, pci='0000:ca:00.0'):
+    def bound_to(self, root, expected, pci='0000:ca:00.0', vram='0%'):
         argv = ['hcu_run.py', '--image', 'image', '--device', '4', '--receipt', 'campaign/results/job.json']
         if expected is not None:
             argv += ['--expected-pci', expected]
@@ -434,7 +435,7 @@ class HcuRunTests(unittest.TestCase):
              mock.patch.dict(hcu_run.os.environ, {'BWBENCH_STOP_FILE': str(root / 'STOP.json')}), \
              mock.patch.object(sys, 'argv', argv), \
              mock.patch.object(hcu_run.subprocess, 'check_output', return_value='sha256:pinned'), \
-             mock.patch.object(hcu_run, '_vram', return_value='0%'), \
+             mock.patch.object(hcu_run, '_vram', return_value=vram), \
              mock.patch.object(hcu_run, '_kfd_visible', return_value=False), \
              mock.patch.object(hcu_run, '_runtime_binding', return_value=binding), \
              mock.patch.object(hcu_run.subprocess, 'run') as run:
@@ -452,6 +453,17 @@ class HcuRunTests(unittest.TestCase):
                 self.assertEqual((record['observed_pci'], record['expected_pci']), ('0000:ca:00.0', '0000:b1:00.0'))
                 self.assertFalse(any(call.args and call.args[0][:2] == ['docker', 'run'] for call in run.call_args_list))
             self.assertFalse((root / 'campaign/results/job.json').exists())
+            self.assertFalse((root / 'STOP.json').exists())
+
+    def test_a_renumbered_index_on_another_users_busy_card_reads_as_renumbered(self):
+        # The shifted index can name a card someone else is using; refusing it as "not idle"
+        # would read as a candidate failure instead of halting the planned card.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            with self.bound_to(root, '0000:b1:00.0', vram='37%'):
+                with self.assertRaisesRegex(RuntimeError, 'not the expected physical PCI device'), \
+                     mock.patch('sys.stdout', new_callable=io.StringIO):
+                    hcu_run.main()
             self.assertFalse((root / 'STOP.json').exists())
 
     def test_the_expected_card_is_admitted_and_its_pci_recorded(self):

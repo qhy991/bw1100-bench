@@ -90,7 +90,7 @@ class HcuQueueTests(unittest.TestCase):
     def test_probe_time_cannot_move_admission_past_its_deadline(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);argv=['hcu_run.py','--image','image','--device','1','--receipt','campaign/results/job.json','--latest-start-epoch','10','--','python3','work.py']
-            with mock.patch.object(hcu,'ROOT',root),mock.patch.object(hcu,'LOCK_DIR',root/'.locks'),mock.patch.object(sys,'argv',argv),mock.patch.object(hcu.time,'time',side_effect=[9,11]),mock.patch.object(hcu.subprocess,'check_output',return_value='sha256:image'),mock.patch.object(hcu,'_vram',return_value='0%'),mock.patch.object(hcu,'_kfd_visible',return_value=False),mock.patch.object(hcu.subprocess,'run') as run:
+            with mock.patch.object(hcu,'ROOT',root),mock.patch.object(hcu,'LOCK_DIR',root/'.locks'),mock.patch.object(sys,'argv',argv),mock.patch.object(hcu.time,'time',side_effect=[9,11]),mock.patch.object(hcu.subprocess,'check_output',return_value='sha256:image'),mock.patch.object(hcu,'_vram',return_value='0%'),mock.patch.object(hcu,'_kfd_visible',return_value=False),mock.patch.object(hcu,'_runtime_binding',return_value={'pci_bus_id':'0000:56:00.0'}),mock.patch.object(hcu.subprocess,'run') as run:
                 with self.assertRaisesRegex(RuntimeError,'window expired'):hcu.main()
                 run.assert_not_called()
             self.assertFalse((root/'campaign/results/job.json').exists())
