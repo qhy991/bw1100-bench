@@ -34,19 +34,29 @@ def author(command, env, timeout, log):
         return 124
 
 
-def author_entry(binding):
+def author_entry(binding, flow_version=None):
     # Keep the venv path: resolving a symlinked Python would lose its sibling CLI.
     bin_directory = Path(sys.executable).absolute().parent
     entry = bin_directory / 'hmz'
     if not entry.is_file() or not os.access(entry, os.X_OK):
         raise RuntimeError('Author executable is unavailable beside the owner Python: ' + str(entry))
     env = dict(os.environ, HOME=binding['home'], HIP_VISIBLE_DEVICES=str(binding['hcu']))
+    # A full evaluation outlasts Claude Code's two-minute Bash default, and a high-effort
+    # reply exceeded its 32000-token cap on C500 (r1b); both ended authors early there.
+    env['BASH_DEFAULT_TIMEOUT_MS'] = env['BASH_MAX_TIMEOUT_MS'] = str(1800 * 1000)
+    env['CLAUDE_CODE_MAX_OUTPUT_TOKENS'] = '64000'
     env['PATH'] = os.pathsep.join((str(bin_directory), str(Path(binding['home']) / '.local/bin'),
                                  env.get('PATH', '')))
     for key in ('http_proxy', 'https_proxy', 'all_proxy', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY'):
         env.pop(key, None)
     subprocess.run([str(entry), '--help'], env=env, check=True, timeout=30,
                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if flow_version is not None:
+        # The Development flow and the Bench flow target different hmz flow APIs.
+        reported = subprocess.run([str(entry), '--version'], env=env, check=True, timeout=30,
+                                  capture_output=True, text=True).stdout.strip()
+        if not reported.startswith('hmz ' + flow_version + '.'):
+            raise RuntimeError(f'Author executable reports {reported!r}; this flow needs hmz {flow_version}')
     return entry, env
 
 

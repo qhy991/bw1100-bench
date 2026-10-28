@@ -113,7 +113,7 @@ bash scripts/dtk.sh cpu IMAGE python3 bwbench.py audit --output .local/container
 
 # 仅在实时确认 HCU1 空闲后，执行一项有界正确性检查
 HIP_VISIBLE_DEVICES=1 BWBENCH_TIMEOUT=180 \
-  bash scripts/dtk.sh gpu IMAGE results/rmsnorm-admission.json \
+  bash scripts/dtk.sh gpu IMAGE .local/rmsnorm/admission.json \
   python3 bwbench.py check --task L1/069_rms_norm --device cuda:0 \
   --candidate /work/examples/l1_069_torch_baseline.py \
   --workloads smoke --rounds 2 --output results/rmsnorm-device.json
@@ -141,7 +141,7 @@ GPU 模式仍需 DTK runtime、root/privileged 容器身份及 `/dev/kfd`、`/de
 
 [Compiler tools for hmz](docs/COMPILER-TOOLS.md) 说明新冻结 Run 如何从各自 Compiler
 自动获得变换清单、调用已有 Lab 解析器，并保留可回放的父候选、参数与生成结果。
-Bench 和 53 题开发共用这条作者接口，继续使用各自原有评测和终态。
+Bench 和注册任务开发共用这条作者接口，继续使用各自原有评测和终态。
 
 ## 软件验证
 

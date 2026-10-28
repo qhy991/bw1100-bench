@@ -28,13 +28,34 @@ def validate_nominee(root, binding, best, environment, stop):
         raise ValueError('source-bound nominee validation failed: ' + result.stderr[-1000:])
 
 
+def exec_arguments(binding, remaining, task):
+    # hmz 0.2.1: the flow is a ./ path, budgets are flow parameters, and the agent slot is
+    # named by the flow. No backup: a settings default would hold a cut-off run past the
+    # SIGTERM grace and turn a normal cutoff into a SIGKILL that halts the HCU.
+    return ['exec', '-f', './campaign/ralph_flow.py', '-a', 'agent=' + binding['model'],
+            '-p', f'budget.duration={remaining},budget.graceful=false', '--backup', 'none', task]
+
+
+def check_exec_line(root, binding, entry, environment):
+    """Read the real exec line and load the flow with hmz's own Runner; no model is called."""
+    probe = ('from hmz.runtime.runner import Runner, read_line\n'
+             'import sys\n'
+             'line = read_line(sys.argv[1:])\n'
+             'Runner(line.flow, agents=line.agents, envs=line.envs, params=line.params,\n'
+             '       budget=line.budget, backup=line.backup)\n')
+    python = Path(entry).parent / 'python'
+    result = subprocess.run([str(python), '-c', probe, *exec_arguments(binding, 60, 'check')[1:]],
+                            cwd=root, env=environment, capture_output=True, text=True, timeout=120)
+    if result.returncode:
+        raise RuntimeError('hmz refuses the author exec line: ' + (result.stderr or result.stdout)[-1500:])
+
+
 def run_author(root, binding, deadline, environment, instruction, entry):
     remaining = int(deadline['search_stop_at_epoch'] - time.time())
     if remaining <= 0:
         raise TimeoutError('CPU preparation consumed the search interval')
-    command = ['/usr/bin/timeout', '--signal=TERM', '--kill-after=15s', str(remaining) + 's',
-        str(entry), 'exec', '-f', 'campaign/ralph_flow.py', '-a', binding['model'],
-        '-c', 'campaign/budget-3h.yaml', instruction + '\n' + (root / 'campaign/TASK.md').read_text()]
+    command = ['/usr/bin/timeout', '--signal=TERM', '--kill-after=15s', str(remaining) + 's', str(entry),
+        *exec_arguments(binding, remaining, instruction + '\n' + (root / 'campaign/TASK.md').read_text())]
     checked = None
     approved = None
     with (root / 'campaign/logs/ralph.log').open('x') as log:
@@ -112,8 +133,9 @@ def write_terminal(root, binding, model_exit, best, confirmation, failure, closu
 def main(root=R, check=False):
     os.chdir(root)
     binding = reconcile(root)
-    entry, environment = author_entry(binding)
+    entry, environment = author_entry(binding, flow_version='0.2')
     catalog(root)
+    check_exec_line(root, binding, entry, environment)
     if check:
         print('Prepared development contract and absolute author entry are available')
         return 0
@@ -159,13 +181,21 @@ def main(root=R, check=False):
             seconds = int(deadline['stop_at_epoch'] - time.time()) - 20
             if seconds <= 0:
                 raise TimeoutError('confirmation budget exhausted')
-            command = ['/usr/bin/timeout', '--signal=TERM', '--kill-after=15s', str(seconds) + 's',
-                'python3', 'campaign/development_evaluate_owner.py', '--candidate', best['candidate'],
-                '--id', 'final-confirmation', '--phase', 'confirmation']
-            with (root / 'campaign/logs/confirmation-owner.log').open('x') as log:
-                code = subprocess.call(command, cwd=root, stdout=log, stderr=subprocess.STDOUT, env=environment)
-            path = root / 'campaign/evaluations/final-confirmation/outcome.json'
-            confirmation = json.loads(path.read_text()) if path.exists() else dict(status='missing', exit_code=code)
+            folder = root / 'campaign/evaluations/final-confirmation'
+            if folder.exists() or folder.is_symlink():
+                # Only this call may create it; anything already there was written by someone else.
+                confirmation = dict(status='confirmation_identity_mismatch',
+                                    reason='final-confirmation existed before the owner confirmation')
+            else:
+                command = ['/usr/bin/timeout', '--signal=TERM', '--kill-after=15s', str(seconds) + 's',
+                    'python3', 'campaign/development_evaluate_owner.py', '--candidate', best['candidate'],
+                    '--id', 'final-confirmation', '--phase', 'confirmation']
+                with (root / 'campaign/logs/confirmation-owner.log').open('x') as log:
+                    code = subprocess.call(command, cwd=root, stdout=log, stderr=subprocess.STDOUT, env=environment)
+                path = folder / 'outcome.json'
+                confirmation = json.loads(path.read_text()) if path.exists() else dict(status='missing', exit_code=code)
+                if confirmation.get('phase') != 'confirmation' and confirmation.get('status') != 'missing':
+                    confirmation = dict(status='confirmation_identity_mismatch', observed_phase=confirmation.get('phase'))
     except Exception as error:
         if isinstance(error, (OSError, subprocess.SubprocessError)):
             halt(binding, 'controller service or observer failed: ' + type(error).__name__, phase)

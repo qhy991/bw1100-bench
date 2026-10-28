@@ -232,8 +232,9 @@ def bench_stages(task, entry, folder):
 
 
 def run_probe(root, identity, request_name, skip_reason=''):
-    if not re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,63}', identity):
-        raise ValueError('Use a unique lowercase probe ID')
+    from scripts.json_stream import admissible_record_id
+    if not admissible_record_id(identity):
+        raise ValueError('Use a unique lowercase probe ID that is not a reserved directory name')
     root = root.resolve()
     folder = own_path(root, 'campaign/engineering/' + identity)
     folder.mkdir(parents=True, exist_ok=False)
@@ -309,11 +310,27 @@ def run_probe(root, identity, request_name, skip_reason=''):
                 outcome['admission_receipts'].append(receipt)
                 device_command = native_env + command
                 gateway = ['python3', 'scripts/hcu_run.py', '--image', bound['image'],
-                    '--device', str(bound['hcu']), '--timeout', str(timeout), '--queue-timeout', '300',
+                    '--device', str(bound['hcu']), *(['--expected-pci', bound['hcu_pci']] if kind == 'development' else []),
+                    '--timeout', str(timeout), '--queue-timeout', '300',
                     '--latest-start-epoch', str(deadline['search_stop_at_epoch'] - timeout - 30),
                     '--receipt', receipt, '--'] + device_command
                 with (folder / (stage + '.log')).open('x') as log:
                     code = subprocess.call(gateway, cwd=root, env=env, stdout=log, stderr=subprocess.STDOUT)
+                if kind == 'development' and code:
+                    from campaign.development_stop import (HCU_PCI_MISMATCH_STOP, halt as halt_card,
+                                                           hcu_pci_mismatch, refused_before_admission)
+                    if hcu_pci_mismatch(folder, stage + '-admission.json', stage + '.log'):
+                        outcome['admission_receipts'].remove(receipt)
+                        halt_card(bound, HCU_PCI_MISMATCH_STOP, relative)
+                        raise ValueError(stage + ' refused before admission: ' + HCU_PCI_MISMATCH_STOP)
+                    # The gateway refused before admission (lock wait, an existing STOP, an expired
+                    # window or an occupied card): there is no release to verify, so the probe
+                    # fails without stopping the card.
+                    refusal = refused_before_admission(folder, stage + '-admission.json', stage + '.log')
+                    if refusal:
+                        # Unlisted: a receipt that was never written must not hold the Run's release open.
+                        outcome['admission_receipts'].remove(receipt)
+                        raise ValueError(stage + ' refused before admission (' + refusal + '); nothing was admitted')
                 try:
                     terminal = release(root, receipt, bound, device_command, deadline['search_stop_at_epoch'])
                 except NativeReleaseUnknown as error:
@@ -341,7 +358,7 @@ def run_probe(root, identity, request_name, skip_reason=''):
                         cwd=root, env=env, stdout=log, stderr=subprocess.STDOUT)
                 unchanged()
                 if code or not read(folder / 'comparison.json')['numerically_passed']:
-                    raise ValueError('Native original five-case comparison failed')
+                    raise ValueError('Native original all-case comparison failed')
             if time.time() > deadline['search_stop_at_epoch']:
                 raise ValueError('Native result completed after the original search cutoff')
             outcome['status'] = 'measurements_retained_pending_review'

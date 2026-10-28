@@ -6,14 +6,18 @@ import re
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from scripts.json_stream import read_json_stream
+from scripts.json_stream import author_diagnostic, read_json_stream, release_json_files
 
 
 def released(root):
-    pending = [path for top in (root / 'campaign', root / '.local') for path in top.rglob('*.json')
-               if not any(name in path.parts for name in ('triton-cache', 'aiter-jit-cache'))]
+    unwalked = []
+    pending = list(release_json_files(root, lambda path, reason: unwalked.append(reason)))
+    if unwalked:
+        return False
     seen = set()
     jobs = {}
+    declared = set()
+    captured = {}
     while pending:
         path = pending.pop()
         if path in seen:
@@ -24,8 +28,17 @@ def released(root):
         try:
             records = ([json.loads(path.read_text())] if path.name.endswith('-terminal.json')
                        else read_json_stream(path))
-        except (OSError, ValueError):
+        except OSError:
             return False
+        except ValueError:
+            # An author's captured output is not a gateway record (#42). It is admitted only
+            # if every job it names is released by a terminal below; anything that could be
+            # or hide a record, or names no job, still withholds the release.
+            named = None if path.name.endswith('-terminal.json') else author_diagnostic(path)
+            if not named:
+                return False
+            captured[path.resolve()] = named
+            continue
         for record in records:
             if not isinstance(record, dict):
                 continue
@@ -43,7 +56,15 @@ def released(root):
                     return False
                 if not referenced.is_file():
                     return False
+                declared.add(referenced.resolve())
                 pending.append(referenced)
+                # The gateway writes a declared receipt's terminal beside it, which may lie
+                # outside the walked directories; read it so the job-id pairing can see it.
+                sibling = referenced.with_name(referenced.stem + '-terminal.json')
+                if sibling.is_symlink():
+                    return False
+                if sibling.is_file():
+                    pending.append(sibling)
             if record.get('schema') != 'bw1100-bench.hcu-admission.v1':
                 continue
             job_id = record.get('job_id')
@@ -55,14 +76,10 @@ def released(root):
                     *required, 'status', 'reason', 'runtime_error_marker', 'release_observations')):
                 after = record
             else:
+                # Paired by job id below, as release_audit pairs it: an author may name a kept
+                # receipt pair by hand (r5 STOP-hcu5), so the sibling name is not the pairing.
                 job['admissions'].append(record)
-                terminal = path.with_name(path.stem + '-terminal.json')
-                if terminal.is_symlink():
-                    return False
-                try:
-                    after = json.loads(terminal.read_text())
-                except (OSError, ValueError):
-                    return False
+                continue
             if (not isinstance(after, dict) or after.get('schema') != record['schema']
                     or after.get('job_id') != job_id or any(key not in after for key in required)
                     or after.get('container_still_running') is not False
@@ -70,10 +87,15 @@ def released(root):
                 return False
             job['terminals'].append(after)
     for job in jobs.values():
+        if not job['terminals']:
+            return False
         if any(any(key not in terminal or terminal[key] != value for key, value in admission.items())
                for admission in job['admissions'] for terminal in job['terminals']):
             return False
-    return True
+    # A declared receipt is never author output, whichever order the walk met it in.
+    if any(path in declared for path in captured):
+        return False
+    return all(jobs.get(job_id, {}).get('terminals') for named in captured.values() for job_id in named)
 
 
 def nominee(root, compiler):

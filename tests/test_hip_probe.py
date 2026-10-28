@@ -51,7 +51,7 @@ class NativeProbeTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name).resolve()
         self.request = source_fixture(self.root)
-        self.bound = dict(task='L1/fixture', image='sha256:' + 'a' * 64, hcu=4,
+        self.bound = dict(task='L1/fixture', image='sha256:' + 'a' * 64, hcu=4, hcu_pci='0000:ca:00.0',
                           compiler_commit='b' * 40)
         started = time.time() - 5400
         self.deadline = dict(started_at_epoch=started, search_stop_at_epoch=started + 9000,
@@ -79,6 +79,26 @@ class NativeProbeTests(unittest.TestCase):
         stage = Path(receipt_name).name.split('-')[0]
         if self.failure == 'missing_admission':
             return 0
+        if self.failure == 'pci_mismatch':
+            kwargs['stdout'].write('{"status": "refused_before_admission", "reason": "hcu_pci_mismatch"}\n'
+                                   'RuntimeError: ' + development_stop.HCU_PCI_MISMATCH + '\n')
+            return 1
+        if self.failure == 'refusal_other_prefix':
+            kwargs['stdout'].write('candidate: ' + development_stop.LOCK_WAIT_TIMEOUT + '\n')
+            return 1
+        if self.failure == 'refusal_not_last':
+            kwargs['stdout'].write('RuntimeError: ' + development_stop.LOCK_WAIT_TIMEOUT + '\ncandidate output\n')
+            return 1
+        if self.failure == 'refusal_after_receipt':
+            write(self.root / receipt_name, dict(schema=probe.ADMISSION, job_id='fixture-' + stage))
+            kwargs['stdout'].write('RuntimeError: ' + development_stop.LOCK_WAIT_TIMEOUT + '\n')
+            return 1
+        if self.failure in ('lock_wait', 'lock_wait_with_terminal') or str(self.failure).startswith('refusal:'):
+            reason = self.failure[len('refusal:'):] if str(self.failure).startswith('refusal:') else development_stop.LOCK_WAIT_TIMEOUT
+            kwargs['stdout'].write('RuntimeError: ' + reason + '\n')
+            if self.failure == 'lock_wait_with_terminal':
+                write(self.root / receipt_name.replace('.json', '-terminal.json'), {'status': 'completed'})
+            return 1
         command = argv[argv.index('--') + 1:]
         receipt = self.root / receipt_name
         before = dict(schema=probe.ADMISSION, job_id='fixture-' + stage,
@@ -221,6 +241,136 @@ class NativeProbeTests(unittest.TestCase):
                     self.assertTrue(development_stop.stopped(self.bound))
                 stop.unlink()
                 self.failure = self.damage = None
+
+    def test_a_development_probe_names_its_physical_card_and_a_bench_probe_does_not(self):
+        self.bound.update(compiler=self.bound['compiler_commit'],
+                          batch_stop_file=str(self.root / 'STOP-hcu4.json'))
+        for kind, expected in (('development', '0000:ca:00.0'), ('bench', None)):
+            self.calls = []
+            with self.subTest(kind=kind), patch.dict(sys.modules, {'campaign.development_stop': development_stop}):
+                self.run_probe('pci-' + kind, kind=kind)
+                gateway = [argv for argv in self.calls if argv[:2] == ['python3', 'scripts/hcu_run.py']]
+                self.assertTrue(gateway)
+                for argv in gateway:
+                    if expected is None:
+                        self.assertNotIn('--expected-pci', argv)
+                    else:
+                        self.assertEqual(argv[argv.index('--expected-pci') + 1], expected)
+
+    def test_a_renumbered_card_halts_the_card_with_its_own_reason(self):
+        self.bound.update(compiler=self.bound['compiler_commit'],
+                          batch_stop_file=str(self.root / 'STOP-hcu4.json'))
+        self.failure = 'pci_mismatch'
+        with patch.dict(sys.modules, {'campaign.development_stop': development_stop}):
+            result = self.run_probe('pci-mismatch', kind='development')
+        self.failure = None
+        self.assertEqual(result['status'], 'failed')
+        stop = json.loads(Path(self.bound['batch_stop_file']).read_text())
+        self.assertEqual(stop['reason'], development_stop.HCU_PCI_MISMATCH_STOP)
+        outcome = json.loads((self.root / 'campaign/engineering/pci-mismatch/outcome.json').read_text())
+        self.assertEqual(outcome['admission_receipts'], [])
+
+    def test_a_reserved_directory_name_is_refused_before_any_probe_work(self):
+        self.bound.update(compiler=self.bound['compiler_commit'],
+                          batch_stop_file=str(self.root / 'STOP-hcu4.json'))
+        with patch.dict(sys.modules, {'campaign.development_stop': development_stop}), \
+             self.assertRaisesRegex(ValueError, 'reserved directory name'):
+            self.run_probe('notes', kind='development')
+        self.assertEqual(self.calls, [])
+        self.assertFalse((self.root / 'campaign/engineering/notes').exists())
+        self.assertFalse(Path(self.bound['batch_stop_file']).exists())
+
+    def test_a_lock_wait_timeout_fails_the_probe_without_stopping_the_card(self):
+        self.bound.update(compiler=self.bound['compiler_commit'],
+                          batch_stop_file=str(self.root / 'STOP-hcu4.json'))
+        self.failure = 'lock_wait'
+        with patch.dict(sys.modules, {'campaign.development_stop': development_stop}):
+            result = self.run_probe('lock-wait', kind='development')
+        self.failure = None
+        self.assertEqual(result['status'], 'failed')
+        self.assertIn('refused before admission', result['reason'])
+        self.assertFalse(Path(self.bound['batch_stop_file']).exists())
+        outcome = json.loads((self.root / 'campaign/engineering/lock-wait/outcome.json').read_text())
+        self.assertEqual(outcome['admission_receipts'], [])
+        from development.development_control import released
+        self.assertTrue(released(self.root))
+
+    def test_every_pre_admission_gateway_refusal_fails_the_probe_without_stopping_the_card(self):
+        """r6 STOP-hcu2/3 aftermath: an existing owner STOP refused a probe and the missing receipt halted again."""
+        from development.development_control import released
+        # Named here, not read from the module: dropping one must fail this test.
+        expected = ('timed out waiting for this HCU lock; no GPU admitted',
+                    'another local bw1100-bench job holds this HCU lock',
+                    'experiment owner stopped new GPU admissions',
+                    'GPU admission window expired before device execution',
+                    'selected HCU is not idle by observed VRAM/KFD check')
+        self.assertEqual(tuple(development_stop.PRE_ADMISSION_REFUSALS), expected)
+        self.bound.update(compiler=self.bound['compiler_commit'],
+                          batch_stop_file=str(self.root / 'STOP-hcu4.json'))
+        for index, reason in enumerate(expected):
+            with self.subTest(reason=reason), patch.dict(sys.modules, {'campaign.development_stop': development_stop}):
+                self.failure = 'refusal:' + reason
+                result = self.run_probe(f'refusal-{index}', kind='development')
+                self.failure = None
+                self.assertEqual(result['status'], 'failed')
+                self.assertIn(reason, result['reason'])
+                self.assertFalse(Path(self.bound['batch_stop_file']).exists())
+                outcome = json.loads((self.root / f'campaign/engineering/refusal-{index}/outcome.json').read_text())
+                self.assertEqual(outcome['admission_receipts'], [])
+                self.assertTrue(released(self.root))
+
+    def test_a_refusal_string_beside_a_written_receipt_still_stops_the_card(self):
+        """The receipt proves a job was admitted; the log string cannot retract it."""
+        self.bound.update(compiler=self.bound['compiler_commit'],
+                          batch_stop_file=str(self.root / 'STOP-hcu4.json'))
+        self.failure = 'refusal_after_receipt'
+        with patch.dict(sys.modules, {'campaign.development_stop': development_stop}):
+            result = self.run_probe('refusal-after-receipt', kind='development')
+        self.failure = None
+        self.assertEqual(result['status'], 'failed')
+        self.assertTrue(Path(self.bound['batch_stop_file']).exists())
+
+    def test_a_refusal_string_under_another_prefix_still_stops_the_card(self):
+        """Only the gateway's own `RuntimeError: <reason>` line is its refusal."""
+        self.bound.update(compiler=self.bound['compiler_commit'],
+                          batch_stop_file=str(self.root / 'STOP-hcu4.json'))
+        self.failure = 'refusal_other_prefix'
+        with patch.dict(sys.modules, {'campaign.development_stop': development_stop}):
+            result = self.run_probe('refusal-other-prefix', kind='development')
+        self.failure = None
+        self.assertEqual(result['status'], 'failed')
+        self.assertTrue(Path(self.bound['batch_stop_file']).exists())
+
+    def test_a_refusal_string_the_gateway_did_not_end_with_still_stops_the_card(self):
+        """An author's command can echo text; only the gateway's final line is its refusal."""
+        self.bound.update(compiler=self.bound['compiler_commit'],
+                          batch_stop_file=str(self.root / 'STOP-hcu4.json'))
+        self.failure = 'refusal_not_last'
+        with patch.dict(sys.modules, {'campaign.development_stop': development_stop}):
+            result = self.run_probe('refusal-not-last', kind='development')
+        self.failure = None
+        self.assertEqual(result['status'], 'failed')
+        self.assertTrue(Path(self.bound['batch_stop_file']).exists())
+
+    def test_an_unrecognised_failure_without_a_receipt_still_stops_the_card(self):
+        self.bound.update(compiler=self.bound['compiler_commit'],
+                          batch_stop_file=str(self.root / 'STOP-hcu4.json'))
+        self.failure = 'refusal:physical_device_binding_failed: inventory changed'
+        with patch.dict(sys.modules, {'campaign.development_stop': development_stop}):
+            result = self.run_probe('unrecognised', kind='development')
+        self.failure = None
+        self.assertEqual(result['status'], 'failed')
+        self.assertTrue(Path(self.bound['batch_stop_file']).exists())
+
+    def test_a_lock_wait_string_beside_a_terminal_receipt_still_stops_the_card(self):
+        self.bound.update(compiler=self.bound['compiler_commit'],
+                          batch_stop_file=str(self.root / 'STOP-hcu4.json'))
+        self.failure = 'lock_wait_with_terminal'
+        with patch.dict(sys.modules, {'campaign.development_stop': development_stop}):
+            result = self.run_probe('lock-wait-terminal', kind='development')
+        self.failure = None
+        self.assertEqual(result['status'], 'failed')
+        self.assertTrue(Path(self.bound['batch_stop_file']).exists())
 
     def test_released_native_candidate_or_late_failure_does_not_halt_development(self):
         self.bound.update(compiler=self.bound['compiler_commit'],

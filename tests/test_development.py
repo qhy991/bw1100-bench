@@ -13,7 +13,7 @@ from compiler_fixture import add_catalog
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from development.development_binding import reconcile, validate_plan
+from development.development_binding import MAX_AUTHORS_PER_HCU, author_capacity_ok, reconcile, validate_plan
 from scripts import bench_queue as queue, prepare_development as prepare
 
 
@@ -50,7 +50,9 @@ def allocation(root, adapter='a' * 40, compiler='b' * 40):
     controls = dict(model='claude/glm-5.3:high', wall_time_seconds=10800,
         search_seconds=9000, confirmation_seconds=1800, token_limits=None, capacity_per_hcu=1,
         reference_access='known_kernel_reproduction_with_declared_development_incumbent')
-    hosts = {name: dict(hcus=[1, 2] if name == 'first' else [2, 3], home=str(root / 'home'),
+    hosts = {name: dict(hcus=[1, 2] if name == 'first' else [2, 3],
+        hcu_pci=({'1': '0000:56:00.0', '2': '0000:05:00.0'} if name == 'first'
+                 else {'2': '0000:05:00.0', '3': '0000:ca:00.0'}), home=str(root / 'home'),
         owner_root=str(root / name / 'owner'), compiler_root=str(root / 'compiler'),
         gateway=dict(root=str(root / 'adapter'), commit=adapter), image='sha256:' + 'c' * 64,
         start_window_seconds=172800) for name in ('first', 'second')}
@@ -74,23 +76,210 @@ class DevelopmentTests(unittest.TestCase):
     def test_complete_static_contract_and_explicit_version(self):
         plan, contracts = allocation(self.root)
         validate_plan(plan, contracts)
-        for change in ('duplicate', 'missing', 'unselected', 'hcu_zero', 'host_excluded', 'invalid_authors', 'budget'):
+        for change in ('duplicate', 'missing', 'unselected', 'hcu_zero', 'host_excluded', 'invalid_authors', 'budget',
+                       'pci_missing', 'pci_partial', 'pci_extra', 'pci_duplicate', 'pci_malformed'):
             bad = copy.deepcopy(plan)
             if change == 'duplicate': bad['assignments'][-1] = bad['assignments'][0]
             if change == 'missing': bad['assignments'].pop()
             if change == 'unselected': bad['compiler'] = None
             if change == 'hcu_zero': bad['assignments'][0]['hcu'] = 0
             if change == 'host_excluded': bad['assignments'][2]['hcu'] = 1
-            if change == 'invalid_authors': bad['controls']['capacity_per_hcu'] = 4
+            if change == 'invalid_authors': bad['controls']['capacity_per_hcu'] = MAX_AUTHORS_PER_HCU + 1
             if change == 'budget': bad['controls']['search_seconds'] = 9100
+            if change == 'pci_missing': del bad['hosts']['first']['hcu_pci']
+            if change == 'pci_partial': del bad['hosts']['first']['hcu_pci']['2']
+            if change == 'pci_extra': bad['hosts']['first']['hcu_pci']['4'] = '0000:b1:00.0'
+            if change == 'pci_duplicate': bad['hosts']['first']['hcu_pci']['2'] = '0000:56:00.0'
+            if change == 'pci_malformed': bad['hosts']['first']['hcu_pci']['1'] = 'ca:00'
             with self.subTest(change=change), self.assertRaises(ValueError):
                 validate_plan(bad, contracts)
 
+    def test_expanded_catalog_preserves_exact_membership_and_case_domains(self):
+        plan, contracts = allocation(self.root)
+        for index, count in enumerate((29, 29, 9, 4, 8, 7)):
+            task = 'new_' + str(index)
+            contract = copy.deepcopy(contracts['tasks']['task_0'])
+            contract['case_ids'] = ['primary'] + ['case_' + str(i) for i in range(count - 1)]
+            contract['workload']['case_ids'] = contract['case_ids']
+            contracts['tasks'][task] = contract
+            plan['assignments'].append(dict(task=task, host='first', hcu=1,
+                                           root=str(self.root / 'runs' / task)))
+        validate_plan(plan, contracts)
+        self.assertEqual(len(contracts['tasks']), 59)
+        self.assertEqual(sum(len(x['case_ids']) for x in contracts['tasks'].values()), 351)
+        bad = copy.deepcopy(plan)
+        bad['assignments'].pop()
+        with self.assertRaises(ValueError):
+            validate_plan(bad, contracts)
+        bad_contracts = copy.deepcopy(contracts)
+        bad_contracts['tasks']['new_0']['case_ids'].append('primary')
+        with self.assertRaises(ValueError):
+            validate_plan(plan, bad_contracts)
+
+    def test_selected_hypotheses_are_complete_and_nonempty(self):
+        plan, contracts = allocation(self.root)
+        plan['hypotheses'] = {task: 'Test one bounded mapping hypothesis.' for task in contracts['tasks']}
+        validate_plan(plan, contracts)
+        for change in ('missing', 'extra', 'empty', 'not_text'):
+            bad = copy.deepcopy(plan)
+            first = next(iter(contracts['tasks']))
+            if change == 'missing': bad['hypotheses'].pop(first)
+            if change == 'extra': bad['hypotheses']['unselected'] = 'Other question'
+            if change == 'empty': bad['hypotheses'][first] = ' '
+            if change == 'not_text': bad['hypotheses'][first] = 3
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                validate_plan(bad, contracts)
+
+    def test_prepare_delivers_and_reconciles_the_selected_question(self):
+        adapter, plan, contracts = self.sources()
+        plan['hypotheses'] = {task: 'Only test row-statistic broadcast regrouping.'
+                              for task in contracts['tasks']}
+        write(self.root / 'plan.json', plan)
+        with patch.object(prepare, 'ROOT', adapter):
+            prepare.prepare(self.root / 'plan.json', self.root / 'contracts.json',
+                            self.root / 'disposition.json', 'first', self.root / 'allocation.json')
+        run = Path(plan['assignments'][0]['root'])
+        self.assertIn(plan['hypotheses']['task_0'], (run / 'campaign/TASK.md').read_text())
+        self.assertEqual(reconcile(run)['hypothesis'], plan['hypotheses']['task_0'])
+        binding = json.loads((run / 'campaign/development-binding.json').read_text())
+        binding['hypothesis'] = 'Unrelated search'
+        write(run / 'campaign/development-binding.json', binding)
+        git(run, 'add', '.')
+        git(run, 'commit', '-qm', 'Fixture changed hypothesis')
+        with self.assertRaisesRegex(ValueError, 'hypothesis'):
+            reconcile(run)
+
+    def test_a_prepared_run_binds_its_hcu_to_the_planned_physical_card(self):
+        adapter, plan, contracts = self.sources()
+        write(self.root / 'plan.json', plan)
+        with patch.object(prepare, 'ROOT', adapter):
+            prepare.prepare(self.root / 'plan.json', self.root / 'contracts.json',
+                            self.root / 'disposition.json', 'first', self.root / 'allocation.json')
+        run = Path(plan['assignments'][0]['root'])
+        self.assertEqual(reconcile(run)['hcu_pci'], '0000:56:00.0')
+        binding = json.loads((run / 'campaign/development-binding.json').read_text())
+        binding['hcu_pci'] = '0000:b1:00.0'
+        write(run / 'campaign/development-binding.json', binding)
+        git(run, 'add', '.')
+        git(run, 'commit', '-qm', 'Fixture changed physical card')
+        with self.assertRaisesRegex(ValueError, 'differs from its frozen static allocation'):
+            reconcile(run)
+
+    def test_starter_only_prepare_has_no_inherited_provenance(self):
+        adapter, plan, contracts = self.sources()
+        row = plan['assignments'][0]
+        del row['inherited']
+        plan['task_ids'] = [row['task']]
+        plan['assignments'] = [row]
+        write(self.root / 'plan.json', plan)
+        with patch.object(prepare, 'ROOT', adapter):
+            prepare.prepare(self.root / 'plan.json', self.root / 'contracts.json',
+                            self.root / 'disposition.json', 'first', self.root / 'allocation.json')
+        run = Path(row['root'])
+        self.assertEqual(list((run / 'campaign/inherited').iterdir()), [])
+        self.assertEqual(reconcile(run)['case_ids'], CASES)
+
+    def test_a_pinned_gateway_that_cannot_pin_the_physical_card_prepares_no_run(self):
+        """node4 renumbered its HCUs (2026-10-28): every development admission passes
+        --expected-pci, directly or through rocprof.sh and dtk.sh gpu, so a gateway that drops
+        it on any of those paths, or does not refuse a mismatch, is refused."""
+        from development.development_stop import HCU_PCI_MISMATCH
+        files = {}
+        for relative in ('scripts/hcu_run.py', 'scripts/rocprof.sh', 'scripts/dtk.sh'):
+            source = subprocess.run(['git', '-C', str(ROOT), 'show', 'origin/task/dcu-gateway-expected-pci:' + relative],
+                                    capture_output=True)
+            if source.returncode != 0:
+                self.skipTest('the expected-PCI gateway branch is not reachable here')
+            files[relative] = source.stdout
+        prepare.require_pci_pinning(files, 'expected-pci')
+        changes = (('no_flag', 'scripts/hcu_run.py', b"'--expected-pci'", b"'--expected-card'"),
+                   ('other_refusal', 'scripts/hcu_run.py', HCU_PCI_MISMATCH.encode(), b'card differs'),
+                   ('rocprof_unpinned', 'scripts/rocprof.sh', b'export BWBENCH_EXPECTED_PCI=', b'BWBENCH_EXPECTED_PCI='),
+                   ('dtk_drops_it', 'scripts/dtk.sh', b'--expected-pci "$BWBENCH_EXPECTED_PCI"', b''))
+        for change, relative, old, new in changes:
+            self.assertIn(old, files[relative])
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, relative + ' does not refuse a renumbered card'):
+                prepare.require_pci_pinning({**files, relative: files[relative].replace(old, new)}, change)
+
+    def test_preparation_refuses_a_pinned_gateway_without_expected_pci(self):
+        adapter, plan, contracts = self.sources()
+        gateway = adapter / 'scripts/hcu_run.py'
+        gateway.write_text(gateway.read_text().replace("'--expected-pci'", "'--expected-card'"))
+        git(adapter, 'commit', '-qam', 'Gateway fixture without --expected-pci')
+        pin = git(adapter, 'rev-parse', 'HEAD')
+        plan['adapter_commit'] = pin
+        for config in plan['hosts'].values():
+            config['gateway']['commit'] = pin
+        write(self.root / 'plan.json', plan)
+        with self.assertRaisesRegex(ValueError, 'does not refuse a renumbered card'):
+            self.prepare(adapter)
+        self.assertFalse((self.root / 'runs').exists())
+        self.assertFalse((self.root / 'allocation.json').exists())
+
+    def test_a_pinned_gateway_without_the_receipt_scope_guard_prepares_no_run(self):
+        """#45 review: a Run executes the pinned gateway's hcu_run.py. Preparation imports it in
+        isolation and exercises its _receipt_paths, so a gateway that predates #44 (b29aa5a
+        admits campaign/__pycache__/p.json), declares another scope, or declares the guard but
+        does not enforce it is refused."""
+        adapter, plan, contracts = self.sources()
+        gateway = adapter / 'scripts/hcu_run.py'
+        original = gateway.read_text()
+        b29 = subprocess.run(['git', '-C', str(ROOT), 'show', 'b29aa5a:scripts/hcu_run.py'],
+                             capture_output=True, text=True)
+        changes = [
+            ('pre_44', original.replace('RECEIPT_ROOTS = ', 'OLD_ROOTS = ')),
+            ('other_dirs', original.replace("'__pycache__', 'notes'))", "'__pycache__'))")),
+            ('other_roots', original.replace("RECEIPT_ROOTS = ('campaign', '.local')", "RECEIPT_ROOTS = ('campaign', 'results')")),
+            ('roots_disabled', original.replace("    if not parts or parts[0] not in RECEIPT_ROOTS or path.suffix != '.json':", "    if False:")),
+            ('caches_disabled', original.replace('    if unwalked:', '    if False:')),
+            ('terminal_disabled', original.replace("        if path.name.endswith('-terminal.json'):", '        if False:')),
+            ('admits_nothing', original.replace("    terminal = path.with_name(path.stem + '-terminal.json')",
+                                                "    raise ValueError('closed')\n    terminal = path.with_name(path.stem + '-terminal.json')")),
+        ]
+        if b29.returncode == 0:
+            appended = (b29.stdout + "\nRECEIPT_ROOTS = ('campaign', '.local')\nRECEIPT_UNWALKED_DIRS = frozenset(("
+                        "'.git', '.deps', '.data', 'triton-cache', 'aiter-jit-cache', '__pycache__', 'notes'))\n")
+            changes.append(('b29aa5a_with_constants_appended', appended))
+            prepare.require_receipt_scope(original.encode(), 'guarded')  # the real copy passes
+            with self.assertRaisesRegex(ValueError, 'receipt-scope guard'):
+                prepare.require_receipt_scope(b29.stdout.encode(), 'b29aa5a')
+        for change, text in changes:
+            self.assertNotEqual(text, original)
+            gateway.write_text(text)
+            git(adapter, 'commit', '-qam', 'Gateway fixture ' + change)
+            pin = git(adapter, 'rev-parse', 'HEAD')
+            bad = copy.deepcopy(plan)
+            bad['adapter_commit'] = pin
+            for config in bad['hosts'].values():
+                config['gateway']['commit'] = pin
+            write(self.root / 'plan.json', bad)
+            with self.subTest(change=change), self.assertRaisesRegex(ValueError, 'receipt-scope guard'):
+                self.prepare(adapter)
+            self.assertFalse((self.root / 'runs').exists())
+            self.assertFalse((self.root / 'allocation.json').exists())
+
     def test_explicit_author_capacity(self):
         plan, contracts = allocation(self.root)
-        for capacity in (1, 2, 3):
+        for capacity in range(1, MAX_AUTHORS_PER_HCU + 1):
             plan['controls']['capacity_per_hcu'] = capacity
             validate_plan(plan, contracts)
+
+    def test_author_capacity_bound_is_exactly_one_to_the_named_limit(self):
+        accepted = [value for value in (0, 1, 3, MAX_AUTHORS_PER_HCU, MAX_AUTHORS_PER_HCU + 1, True, 2.0, '2')
+                    if author_capacity_ok(value)]
+        self.assertEqual(accepted, [1, 3, MAX_AUTHORS_PER_HCU])
+
+    def test_queue_admits_the_named_limit_and_refuses_one_more(self):
+        rows = [dict(task='t', root=str(self.root / 't'), host='fixture', hcu=2)]
+        for capacity, accepted in ((MAX_AUTHORS_PER_HCU, True), (MAX_AUTHORS_PER_HCU + 1, False)):
+            path = self.root / f'capacity-{capacity}.json'
+            write(path, dict(kind='registered_task_development', host='fixture', start_window_seconds=1,
+                             capacity_per_hcu=capacity, runs=rows))
+            with self.subTest(capacity=capacity), self.assertRaises(Exception) as refused:
+                queue.run(self.root / f'owner-{capacity}', path)
+            # The admitted capacity gets past the capacity check and fails later on the missing Run.
+            self.assertEqual('Unsupported author capacity' in str(refused.exception), not accepted)
+            self.assertFalse((self.root / f'owner-{capacity}/LAUNCH.json').exists())
 
     def sources(self):
         adapter = self.root / 'adapter'
@@ -316,3 +505,123 @@ Path('campaign/DONE.json').write_text(json.dumps(dict(terminal=True,status='comp
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class DevelopmentTensorTests(unittest.TestCase):
+    def setUp(self):
+        try:
+            import torch
+        except ImportError:
+            self.skipTest('torch is required for tensor ABI fixtures')
+        self.torch = torch
+
+    def test_tensor_inputs_keep_raw_bits_and_snapshot_representation(self):
+        from types import SimpleNamespace
+        from development.development_device import input_tensor, input_snapshots
+        torch = self.torch
+        raw = torch.tensor([0x7f800001, 0x80000000, 1], dtype=torch.uint32).view(torch.float32)
+        arg = SimpleNamespace(name='x', dtype='fp32', shape=(3,))
+        tensor = input_tensor(raw, arg)
+        self.assertTrue(torch.equal(tensor.view(torch.uint8), raw.view(torch.uint8)))
+        self.assertNotEqual(tensor.untyped_storage().data_ptr(), raw.untyped_storage().data_ptr())
+        after = input_snapshots({'x': raw}, {'x': tensor})['x']
+        self.assertIsInstance(after, torch.Tensor)
+        self.assertTrue(torch.equal(after.view(torch.uint8), raw.view(torch.uint8)))
+        self.assertEqual(input_snapshots({'x': [1.0]}, {'x': torch.tensor([1.0])})['x'], [1.0])
+        with self.assertRaises(ValueError):
+            input_tensor(raw.to(torch.float64), arg)
+
+    def test_complete_output_abi_and_fresh_storage(self):
+        from types import SimpleNamespace
+        from development.development_device import native_outputs
+        torch = self.torch
+        args = [SimpleNamespace(name=n, dtype='fp32', shape=(2,), mode='output') for n in ('y', 'z')]
+        workload = SimpleNamespace(document={'semantics': {'output_storage': 'fresh_contiguous'}},
+                                   tensor_abi=lambda _: args)
+        x = torch.tensor([1.0, 2.0])
+        observed, _ = native_outputs(workload, 'primary', (x.clone(), x.clone()), 'cpu', (x,))
+        self.assertEqual(set(observed), {'y', 'z'})
+        observed, _ = native_outputs(workload, 'primary', (x.clone() + 1, x.clone()),
+                                     'cpu', (x,), names=['z', 'y'])
+        self.assertEqual(observed, {'y': [1.0, 2.0], 'z': [2.0, 3.0]})
+        with self.assertRaises(ValueError):
+            native_outputs(workload, 'primary', (x.clone(), x.clone()),
+                           'cpu', (x,), names=['y', 'y'])
+        for outputs in ((x.clone(),), (x.clone(), x.clone(), x.clone()),
+                        (x.double(), x.clone()), (x.reshape(1, 2), x.clone()),
+                        (x, x.clone()), (x.clone(), x.clone()[::2])):
+            with self.subTest(outputs=outputs), self.assertRaises(ValueError):
+                native_outputs(workload, 'primary', outputs, 'cpu', (x,))
+        shared = x.clone()
+        with self.assertRaises(ValueError):
+            native_outputs(workload, 'primary', (shared, shared), 'cpu', (x,))
+
+    @unittest.skipUnless(os.environ.get('BWBENCH_CAKE_SOURCE'), 'Set BWBENCH_CAKE_SOURCE for canonical Workload replay')
+    def test_original_multioutput_task_accepts_disjoint_spans_and_rejects_overlap(self):
+        source = os.environ['BWBENCH_CAKE_SOURCE']
+        script = '''
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(sys.argv[1]) / 'src'))
+import torch
+from open_cake_ir.tasks.workloads import create_task, WorkloadContract, materialize_evaluation_case
+from open_cake_ir.evaluation.core import compare_tile_outputs
+from development.development_device import input_tensor, input_snapshots, native_outputs
+doc, _ = create_task('per_channel_moments', backend='triton-dcu', rows=4, columns=4)
+w = WorkloadContract(doc)
+for case_id in w.case_ids:
+    before, expected = materialize_evaluation_case(w, case_id)
+    values = {arg.name: input_tensor(before[arg.name], arg)
+              for arg in w.tensor_abi(case_id) if arg.mode == 'input'}
+    storage = torch.empty(8)
+    outputs = (storage[:4], storage[4:])
+    for name, output in zip(('mean', 'mean_square'), outputs, strict=True):
+        output.copy_(torch.tensor(expected[name], dtype=torch.float32))
+    assert outputs[0].untyped_storage().data_ptr() == outputs[1].untyped_storage().data_ptr()
+    observed, metadata = native_outputs(w, case_id, outputs, 'cpu', values.values())
+    ok, metrics = compare_tile_outputs(w, before, expected, observed, input_snapshots(before, values))
+    assert ok, (case_id, metrics)
+    assert set(metadata) == {'mean', 'mean_square'}
+    for bad in ((storage[:4], storage[3:7]), (values['x'].reshape(-1)[1:5], storage[4:])):
+        try:
+            native_outputs(w, case_id, bad, 'cpu', values.values())
+        except ValueError as error:
+            assert 'overlaps' in str(error), error
+        else:
+            raise AssertionError('Overlapping output byte spans must fail')
+print('5 canonical multi-output cases accept disjoint shared storage and reject output/input overlaps')
+'''
+        subprocess.run([sys.executable, '-c', script, source], cwd=ROOT, check=True)
+
+    @unittest.skipUnless(os.environ.get('BWBENCH_CAKE_SOURCE'), 'Set BWBENCH_CAKE_SOURCE for canonical Workload replay')
+    def test_affine_all_cases_preserve_inputs_under_canonical_comparator(self):
+        source = os.environ['BWBENCH_CAKE_SOURCE']
+        script = '''
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(sys.argv[1]) / 'src'))
+import torch
+from open_cake_ir.tasks.workloads import create_task, WorkloadContract, materialize_evaluation_case
+from open_cake_ir.evaluation.core import compare_tile_outputs
+from development.development_device import input_tensor, input_snapshots, native_outputs
+for task, dims in [('aka_affine_nhwc', dict(rows=7, columns=257, depth=None)),
+                   ('aka_affine_nchw', dict(rows=2, columns=5, depth=257))]:
+    doc, _ = create_task(task, backend='triton-dcu', **dims)
+    w = WorkloadContract(doc)
+    assert len(w.case_ids) == 29
+    for case_id in w.case_ids:
+        before, expected = materialize_evaluation_case(w, case_id)
+        values = {arg.name: input_tensor(before[arg.name], arg)
+                  for arg in w.tensor_abi(case_id) if arg.mode == 'input'}
+        outputs = tuple(torch.tensor(expected[arg.name], dtype=torch.float32).reshape(arg.shape)
+                        for arg in w.tensor_abi(case_id) if arg.mode == 'output')
+        observed, _ = native_outputs(w, case_id, outputs, 'cpu', values.values())
+        after = input_snapshots(before, values)
+        ok, metrics = compare_tile_outputs(w, before, expected, observed, after)
+        assert ok, (task, case_id, metrics)
+        name = next(iter(after))
+        after[name].view(torch.uint8)[0] ^= 1
+        assert not compare_tile_outputs(w, before, expected, observed, after)[1]['inputs_unchanged']
+print('58 canonical affine cases preserve raw input bits and reject input mutation')
+'''
+        subprocess.run([sys.executable, '-c', script, source], cwd=ROOT, check=True)

@@ -95,7 +95,7 @@ condition remains unchanged.
 For registered development, `--native-manifest` is a separate device input. It is
 not an emission receipt. The device adapter derives the full output ABI from the
 original Workload and checks it before flattening values. `compare-native` uses
-`compare_tile_outputs` for all five original cases and writes `comparison.json`
+`compare_tile_outputs` for all original task-owned cases and writes `comparison.json`
 inside this engineering record. The callable samples remain diagnostic.
 
 If execution cannot fit, use a new ID and the original gap dossier to retain the

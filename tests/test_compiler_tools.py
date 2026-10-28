@@ -234,16 +234,36 @@ else:
                     (self.root / 'campaign/evaluations').mkdir(); (self.root / 'campaign/management').mkdir()
                 self.write('campaign/deadline.json', dict(source_commit=self.prepared, search_stop_at_epoch=time.time()+60))
                 observed = json.loads(self.process('''
-import json,runpy,sys,time,types
+import asyncio,json,runpy,sys,time,types
 from pathlib import Path
 package=types.ModuleType('hmz'); flows=types.ModuleType('hmz.flows')
-flows.Agent=object; flows.Allowance=lambda **kw:None; flows.flow=lambda **kw:lambda f:f
+class Base:
+    pass
+class HarnessError(Exception):
+    pass
+for name in ('Agent','AgentCollection','EnvCollection','FlowContext','FlowParams','LocalEnv'):
+    setattr(flows,name,type(name,(Base,),{}))
+flows.HarnessError=HarnessError
+flows.HarnessNotInstalled=type('HarnessNotInstalled',(HarnessError,),{})
+flows.HarnessSandboxed=type('HarnessSandboxed',(HarnessError,),{})
+flows.Allowance=flows.Permission=lambda **kw:None; flows.flow=lambda **kw:lambda f:f
+flows.PermissionKind=types.SimpleNamespace(ALL='all',READ='read',NONE='none')
 sys.modules['hmz']=package;sys.modules['hmz.flows']=flows
 time.sleep=lambda seconds:None
 module=runpy.run_path('campaign/ralph_flow.py'); calls=[]
 def author(prompt,**kw):
     calls.append(prompt);path=Path('campaign/deadline.json');d=json.loads(path.read_text());d['search_stop_at_epoch']=0;path.write_text(json.dumps(d))
-module['run']((author,), 'Frozen task')
+    return 'turn complete'
+class Agent:
+    async def spawn(self):
+        return object()
+    async def run(self,prompt,**kw):
+        return author(prompt)
+if asyncio.iscoroutinefunction(module['run']):
+    asyncio.run(module['run']('Frozen task',agents={'agent':Agent()},envs={'workspace':object()},
+        params=types.SimpleNamespace(max_rounds=None),ctx=types.SimpleNamespace(state={})))
+else:
+    module['run']((author,), 'Frozen task')
 print(json.dumps(calls))
 '''))
                 self.assertEqual(len(observed), 1)
@@ -254,6 +274,55 @@ print(json.dumps(calls))
                 self.assertIn('Own native HIP explorations', observed[0])
                 self.assertIn('retained native build failure', observed[0])
 
+
+class DevelopmentAuthorPermissionTests(unittest.TestCase):
+    def test_the_author_role_is_granted_an_open_fence(self):
+        """bw1100 has no Landlock; a fenced Claude author is refused before its first turn."""
+        try:
+            from hmz.runtime.flowing import declaring
+            from hmz.runtime.flowing.harnessing import fenced
+        except ImportError:
+            self.skipTest('hmz 0.2.1 is not installed beside this Python')
+        import runpy
+        module = runpy.run_path(str(ROOT / 'development/ralph_flow.py'), run_name='ralph_flow')
+        permission = module['Author']._permission
+        self.assertTrue(fenced(permission, workdir='/run', home='/home', profile=None, environ={}).open)
+        self.assertIs(module['Agents'].__annotations__['agent'], module['Author'])
+
+    def test_hmz_accepts_the_exact_author_exec_line(self):
+        """r2: hmz 0.2.1 read `campaign/ralph_flow.py` as a flowverse name and exited 2 in all 9 Runs.
+
+        The same check runs in development_launch --check, which bench_queue calls before a Run starts.
+        """
+        try:
+            from hmz.runtime.runner import read_line
+        except ImportError:
+            self.skipTest('hmz 0.2.1 is not installed beside this Python')
+        sys.path.insert(0, str(ROOT / 'development'))
+        try:
+            import development_launch
+        finally:
+            sys.path.remove(str(ROOT / 'development'))
+        arguments = development_launch.exec_arguments({'model': 'claude/glm-5.3:high'}, 600, 'task')
+        line = read_line(arguments[1:])
+        self.assertEqual(line.flow, './campaign/ralph_flow.py')
+        self.assertEqual(line.backup, ())
+        self.assertEqual(line.budget.duration.total_seconds(), 600)
+        with tempfile.TemporaryDirectory() as directory:
+            run = Path(directory)
+            (run / 'campaign').mkdir()
+            for name in ('ralph_flow.py', 'development_stop.py'):
+                shutil.copyfile(ROOT / 'development' / name, run / 'campaign' / name)
+            shutil.copytree(ROOT / 'campaign', run / 'campaign', dirs_exist_ok=True,
+                            ignore=shutil.ignore_patterns('ralph_flow.py'))
+            environment = dict(os.environ, HOME=directory)
+            development_launch.check_exec_line(run, {'model': 'claude/glm-5.3:high'},
+                                               Path(sys.executable).parent / 'hmz', environment)
+            arguments[2] = 'campaign/ralph_flow.py'
+            development_launch.exec_arguments = lambda *a: arguments
+            with self.assertRaisesRegex(RuntimeError, 'hmz refuses the author exec line(.|\n)*a path starts with'):
+                development_launch.check_exec_line(run, {'model': 'claude/glm-5.3:high'},
+                                                   Path(sys.executable).parent / 'hmz', environment)
 
 if __name__ == '__main__':
     unittest.main()

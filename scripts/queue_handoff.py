@@ -2,6 +2,8 @@
 from pathlib import Path
 import json
 
+from development.development_binding import MAX_AUTHORS_PER_HCU, author_capacity_ok
+
 UNKNOWN_EXIT = 'unobserved_after_coordinator_handoff'
 
 
@@ -40,8 +42,8 @@ def validate_handoff(value, spec, allocation):
     if Path(value['scheduler_lock']).resolve() != old / 'owner.lock':
         raise ValueError('Handoff must retain the original scheduler lock')
     capacity = value.get('capacity_per_hcu')
-    if type(capacity) is not int or capacity not in range(1, 4):
-        raise ValueError('Declare one to three author slots per HCU')
+    if not author_capacity_ok(capacity):
+        raise ValueError(f'Declare one to {MAX_AUTHORS_PER_HCU} author slots per HCU')
     if not value.get('authorization'):
         raise ValueError('Handoff needs an explicit execution-policy amendment')
     previous = process_identity(value['previous_owner_pid'])

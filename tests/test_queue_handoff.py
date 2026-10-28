@@ -59,6 +59,17 @@ class HandoffTests(unittest.TestCase):
             with self.subTest(change=change), patch('scripts.queue_handoff.process_identity',side_effect=current), self.assertRaises(ValueError):
                 validate_handoff(bad,self.spec,self.path)
 
+    def test_capacity_is_bounded_by_the_named_author_limit(self):
+        from scripts.queue_handoff import MAX_AUTHORS_PER_HCU
+        for capacity, accepted in ((MAX_AUTHORS_PER_HCU, True), (MAX_AUTHORS_PER_HCU + 1, False), (0, False)):
+            value = dict(copy.deepcopy(self.value), capacity_per_hcu=capacity)
+            with self.subTest(capacity=capacity), patch('scripts.queue_handoff.process_identity', side_effect=self.identity_for):
+                if accepted:
+                    validate_handoff(value, self.spec, self.path)
+                else:
+                    with self.assertRaisesRegex(ValueError, 'author slots per HCU'):
+                        validate_handoff(value, self.spec, self.path)
+
     def test_missing_controller_requires_terminal_observation(self):
         with patch('scripts.queue_handoff.process_identity',return_value=None), self.assertRaises(ValueError):
             validate_handoff(self.value,self.spec,self.path)

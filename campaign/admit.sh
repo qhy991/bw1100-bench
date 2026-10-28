@@ -15,6 +15,6 @@ PY
 )
 case "$mode" in
  gpu) image=$1;receipt=$2;shift 2;exec bash scripts/dtk.sh gpu "$image" "$receipt" env TRITON_F32_DEFAULT=ieee FLA_TRIL_PRECISION=ieee "$@";;
- profile) image=$1;receipt=$2;pmc=$3;report=$4;regex=$5;shift 5;exec bash scripts/rocprof.sh "$image" "$receipt" "$pmc" "$report" "$regex" env TRITON_F32_DEFAULT=ieee FLA_TRIL_PRECISION=ieee "$@";;
+ profile) receipt=$1;pmc=$2;report=$3;regex=$4;shift 4;exec bash scripts/rocprof.sh "$receipt" "$pmc" "$report" "$regex" env TRITON_F32_DEFAULT=ieee FLA_TRIL_PRECISION=ieee "$@";;
  *) exit 2;;
 esac

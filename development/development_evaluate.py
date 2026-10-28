@@ -50,13 +50,14 @@ p.add_argument('--id', required=True)
 p.add_argument('--phase', choices=['emit', 'compare', 'validate', 'compare-native'], required=True)
 p.add_argument('--result-phase', choices=['search', 'confirmation'], default='search')
 a = p.parse_args()
-assert re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,63}', a.id)
+from scripts.json_stream import admissible_record_id
+if not admissible_record_id(a.id):raise SystemExit('evaluation id must be lowercase and not a reserved directory name (notes or a cache)')
 os.chdir(R)
 b = reconcile(R, mounted=True)
 w = load_workload(R / 'campaign/workload.json')
 c = Compiler.load(C, C / 'compiler/revision.json')
 assert c.commit == b['compiler']
-assert list(w.case_ids) == b['case_ids'] and len(w.case_ids) == 5
+assert list(w.case_ids) == b['case_ids']
 if a.phase == 'compare-native':
     if a.candidate or not a.native_manifest or a.result_phase != 'search':
         raise ValueError('Native comparison needs its manifest and stays in search engineering evidence')
@@ -166,7 +167,7 @@ if a.phase in ('emit', 'validate'):
             assert json.loads((folder / 'schedule.json').read_text()) == document
             assert json.loads((folder / 'emission.json').read_text()) == emission
             assert (folder / 'source.py').read_text() == lowering.source, 'retained emission differs from pinned Compiler'
-            print('validated fixed-source five-case nominee; CPU only')
+            print('validated fixed-source all-case nominee; CPU only')
         else:
             stage = 'emission_write'
             write_bytes_new(folder / 'source.py', lowering.source.encode('utf-8'))

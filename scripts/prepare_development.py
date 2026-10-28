@@ -2,16 +2,76 @@
 """Prepare one host's new development Runs; never start an author or a GPU process."""
 from pathlib import Path
 import argparse
+import importlib.util
 import json
 import shutil
 import subprocess
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from campaign.binding import GATEWAY_FILES, clean, git, read
 from development.development_binding import ADAPTER_SCRIPTS, BUDGET, KIND, inherited_path, render_agents, render_task, validate_plan
+from scripts.json_stream import RECEIPT_REFUSED_DIRS, RELEASE_ROOTS
+from development.development_stop import HCU_PCI_MISMATCH
 from scripts.prepare_bench import clone, gateway_sources, new_json, source_identity
+
+# What the pinned gateway's _receipt_paths must refuse and admit (#44, #45 review).
+RECEIPT_REFUSED = ('campaign/__pycache__/p.json', '.data/p.json', 'native/p.json', 'campaign/x-terminal.json',
+                   *('%s/%s/p.json' % (top, cache) for top in RELEASE_ROOTS for cache in sorted(RECEIPT_REFUSED_DIRS)))
+RECEIPT_ADMITTED = ('campaign/evaluations/e/p.json', '.local/profile/p.json')
+
+
+def require_receipt_scope(gateway_source, commit):
+    """The Run executes the pinned gateway; it must refuse every receipt the checks may miss.
+
+    The source is imported as an isolated module (its main() never runs) with ROOT bound to
+    an empty temporary directory, and its own _receipt_paths is exercised, so a guard that is
+    declared but not enforced is refused like a missing one.
+    """
+    refusal = 'Pinned gateway ' + commit + ' scripts/hcu_run.py lacks the receipt-scope guard: '
+    with tempfile.TemporaryDirectory() as temporary:
+        root = Path(temporary).resolve()
+        (root / 'scripts').mkdir()
+        (root / 'scripts/hcu_run.py').write_bytes(gateway_source)
+        spec = importlib.util.spec_from_file_location('pinned_gateway', str(root / 'scripts/hcu_run.py'))
+        gateway = importlib.util.module_from_spec(spec)
+        try:
+            spec.loader.exec_module(gateway)
+        except Exception as error:
+            raise ValueError(refusal + 'it does not import: %r' % error) from error
+        if (getattr(gateway, 'RECEIPT_ROOTS', None), getattr(gateway, 'RECEIPT_UNWALKED_DIRS', None)) != (
+                RELEASE_ROOTS, RECEIPT_REFUSED_DIRS):
+            raise ValueError(refusal + 'RECEIPT_ROOTS/RECEIPT_UNWALKED_DIRS differ from the release checks\' copy')
+        gateway.ROOT = root
+        for name in RECEIPT_REFUSED:
+            try:
+                gateway._receipt_paths(name)
+            except ValueError:
+                continue
+            except Exception as error:
+                raise ValueError(refusal + '%s raised %r instead of a refusal' % (name, error)) from error
+            raise ValueError(refusal + 'it admits ' + name)
+        for name in RECEIPT_ADMITTED:
+            try:
+                gateway._receipt_paths(name)
+            except Exception as error:
+                raise ValueError(refusal + 'it refuses ' + name + ': %r' % error) from error
+
+
+def require_pci_pinning(gateway_files, commit):
+    # Every development admission passes --expected-pci, from the owner and probe directly and
+    # from rocprof.sh through dtk.sh gpu. A gateway that does not parse it would fail each one
+    # at argparse, which the adapter would read as a candidate failure; one whose rocprof.sh
+    # or dtk.sh drops it would admit a renumbered card for profiling.
+    required = {'scripts/hcu_run.py': (b"'--expected-pci'", HCU_PCI_MISMATCH.encode()),
+                'scripts/rocprof.sh': (b'pinned_image.py" --pci', b'export BWBENCH_EXPECTED_PCI='),
+                'scripts/dtk.sh': (b'--expected-pci "$BWBENCH_EXPECTED_PCI"',)}
+    for relative, texts in required.items():
+        if not all(text in gateway_files[relative] for text in texts):
+            raise ValueError('Pinned gateway ' + commit + ' ' + relative + ' does not refuse a renumbered card '
+                             '(--expected-pci); pin a gateway at or after the expected-PCI change')
 
 
 def prepare(plan_path, contracts_path, disposition_path, host, output):
@@ -19,7 +79,7 @@ def prepare(plan_path, contracts_path, disposition_path, host, output):
     validate_plan(plan, contracts)
     disposition = read(disposition_path)
     if disposition.get('selected_compiler') != plan['compiler']:
-        raise ValueError('The explicit Bench disposition must select this immutable Compiler')
+        raise ValueError('The explicit engineering selection must select this immutable Compiler')
     clean(ROOT, plan['adapter_commit'])
     identity = source_identity(ROOT)
     config = plan['hosts'][host]
@@ -27,6 +87,8 @@ def prepare(plan_path, contracts_path, disposition_path, host, output):
     clean(compiler, plan['compiler'])
     clean(gateway, config['gateway']['commit'])
     gateway_files = gateway_sources(gateway, config['gateway']['commit'])
+    require_receipt_scope(gateway_files['scripts/hcu_run.py'], config['gateway']['commit'])
+    require_pci_pinning(gateway_files, config['gateway']['commit'])
     selected = [row for row in plan['assignments'] if row['host'] == host]
     if output.exists() or not selected or any(Path(row['root']).exists() for row in selected):
         raise ValueError('Preparation requires a nonempty host subset and fresh output/Run roots')
@@ -34,6 +96,8 @@ def prepare(plan_path, contracts_path, disposition_path, host, output):
         raise ValueError('Run roots must be canonical paths without symlink aliases')
     seeds = {}
     for row in selected:
+        if row.get('inherited') is None:
+            continue
         source = Path(row['inherited']['source'])
         if not source.is_file() or source.is_symlink():
             raise ValueError('Inherited source must be a retained ordinary file')
@@ -44,7 +108,8 @@ def prepare(plan_path, contracts_path, disposition_path, host, output):
     subprocess.run([sys.executable, str(ROOT / 'development/catalog.py'), '--compiler-source',
                     str(compiler), '--compiler', plan['compiler'], '--contracts', str(contracts_path),
                     '--plan', str(plan_path), '--host', host], check=True)
-    if any(Path(row['inherited']['source']).read_bytes() != seeds[row['task']] for row in selected):
+    if any(Path(row['inherited']['source']).read_bytes() != seeds[row['task']]
+           for row in selected if row.get('inherited') is not None):
         raise ValueError('Inherited material changed during CPU qualification')
     records = []
     for row in selected:
@@ -65,17 +130,21 @@ def prepare(plan_path, contracts_path, disposition_path, host, output):
         for name in ADAPTER_SCRIPTS:
             shutil.copyfile(ROOT / 'development' / name, run / 'campaign' / name)
         binding = dict(task=task, root=str(run), host=host, home=config['home'], hcu=row['hcu'],
+            hcu_pci=config['hcu_pci'][str(row['hcu'])],
             compiler=plan['compiler'], gateway=config['gateway']['commit'], image=config['image'],
             gateway_files=list(GATEWAY_FILES), **plan['controls'],
             **{key: contract[key] for key in ('rows', 'columns', 'depth', 'case_ids', 'abi')},
             batch_stop_file=str(Path(config['owner_root']) / ('STOP-hcu' + str(row['hcu']) + '.json')))
+        if 'hypotheses' in plan:
+            binding['hypothesis'] = plan['hypotheses'][task]
         new_json(run / 'campaign/development-binding.json', binding)
         new_json(run / 'campaign/development-plan.json', plan)
         new_json(run / 'campaign/original-contracts.json', contracts)
         new_json(run / 'campaign/original-workload.json', contract['workload'])
         new_json(run / 'campaign/compiler-disposition.json', disposition)
-        new_json(run / 'campaign/inherited/provenance.json', dict(row['inherited'], source=inherited_path(row)))
-        (run / inherited_path(row)).write_bytes(seeds[task])
+        if row.get('inherited') is not None:
+            new_json(run / 'campaign/inherited/provenance.json', dict(row['inherited'], source=inherited_path(row)))
+            (run / inherited_path(row)).write_bytes(seeds[task])
         (run / 'campaign/budget-3h.yaml').write_text(BUDGET)
         (run / 'campaign/TASK.md').write_text(render_task((ROOT / 'development/TASK.md').read_text(), binding))
         (run / 'AGENTS.md').write_text(render_agents())
