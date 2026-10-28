@@ -25,7 +25,7 @@ for Python packages that call `getpass.getuser()` under a UID absent from the
 container's passwd file.
 
 The receipt path must resolve to a `.json` file under `campaign/` or `.local/`, not
-below `.git`, `.deps`, `.data`, `triton-cache`, `aiter-jit-cache` or `__pycache__`, and
+below `.git`, `.deps`, `.data`, `triton-cache`, `aiter-jit-cache`, `__pycache__` or `notes`, and
 not named `*-terminal.json`. Both release checks, `development_control.released` and
 `bench_queue.release_audit`, read every `.json` file there. A receipt elsewhere would be
 invisible to them, so a gateway killed before its terminal could be certified released.
