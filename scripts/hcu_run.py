@@ -278,7 +278,7 @@ def _observe_release(device, job_id, exit_code):
         time.sleep(1)
 
 
-_CONTAINER = re.compile(r'docker[-/]([0-9a-f]{64})')
+_CONTAINER = re.compile(r'(?:^|/)docker[-/]([0-9a-f]{64})', re.MULTILINE)
 
 
 def _container_of(pid, proc=Path('/proc')):

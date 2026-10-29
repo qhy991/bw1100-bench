@@ -287,7 +287,8 @@ class HcuRunTests(unittest.TestCase):
                     ('11:devices:/docker/%s\n' % other, other + '\n', [4242]),
                     ('0::/system.slice/docker-%s.scope\n' % other, other + '\n', [4242]),
                     ('11:devices:/docker/%s\n' % gone, other + '\n', None),
-                    ('11:devices:/user.slice\n', other + '\n', None)):
+                    ('11:devices:/user.slice\n', other + '\n', None),
+                    ('11:devices:/mydocker/%s\n' % other, other + '\n', None)):
                 (root / '4242' / 'cgroup').write_text(cgroup)
                 outputs = {('hy-smi', '--showpids'): showpids, ('docker', 'ps', '-q', '--no-trunc'): running}
                 with self.subTest(cgroup=cgroup), \

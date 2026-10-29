@@ -55,11 +55,17 @@ forces a release, and persistent occupancy remains not-qualified.
 
 Occupancy held by processes that cannot be this job's withholds only the HCU-wide STOP.
 After a zero exit with the container gone and KFD showing nothing visible to this user,
-if every `hy-smi --showpids` holder of the card is a live, non-zombie process whose start
-time (`/proc/<pid>/stat` field 22 plus `btime`) is after `docker run` returned, the terminal keeps its observed VRAM and `not_qualified`
-status and adds `foreign_occupancy` with those holders. A holder that started before that
-point, a zombie, a vanished PID, a holder whose card index cannot be read, or an empty
-holder list keeps the STOP. Holders show who occupies the card, not whose memory remains. The next
+if every `hy-smi --showpids` holder of the card cannot be this job's, the terminal keeps its
+observed VRAM and `not_qualified` status and adds `foreign_occupancy` with those holders.
+A holder cannot be this job's when it is a live, non-zombie process whose start time
+(`/proc/<pid>/stat` field 22 plus `btime`) is after `docker run` returned, or when its
+`/proc/<pid>/cgroup` names a Docker container (`/docker/<id>` or `docker-<id>.scope`) that
+`docker ps` still lists: this job's own container has already left `docker ps` (r6
+STOP-hcu2/3, another user's server that started during the evaluation). Any other holder
+keeps the STOP: a host process that started before that point, a holder in a container
+that no longer runs or in another runtime's cgroup, a zombie, a vanished PID, a holder
+whose card index cannot be read, an unreadable cgroup or `docker ps`, or an empty holder
+list. Holders show who occupies the card, not whose memory remains. The next
 admission's own idle check still refuses a card that is not idle.
 
 A command that assigns `HIP/ROCR/CUDA/DCU_VISIBLE_DEVICES` or `GPU_DEVICE_ORDINAL`
