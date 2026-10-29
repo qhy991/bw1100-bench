@@ -278,19 +278,52 @@ def _observe_release(device, job_id, exit_code):
         time.sleep(1)
 
 
+_CONTAINER = re.compile(r'(?:^|/)docker[-/]([0-9a-f]{64})', re.MULTILINE)
+
+
+def _container_of(pid, proc=Path('/proc')):
+    """The Docker container id in a process's cgroup, or None for a host process."""
+    try:
+        match = _CONTAINER.search((proc / str(pid) / 'cgroup').read_text())
+    except OSError:
+        return None
+    return match.group(1) if match else None
+
+
+def _running_containers():
+    output = subprocess.check_output(['docker', 'ps', '-q', '--no-trunc'], universal_newlines=True, timeout=15)
+    return set(output.split())
+
+
 def _foreign_occupancy(device, exited_epoch):
     """The holders of a card that stayed occupied after this job's container exited, when
-    every one of them started after that exit and so cannot be this job's.
+    none of them can be this job's.
 
-    This decides only whether an unconfirmed release is attributable to someone else (r3
-    STOP-hcu3, 2026-10-26). It never makes a release confirmed: the receipt keeps the
-    observed VRAM and the not-qualified status. A lingering holder of ours started before
-    the exit and keeps the STOP; an empty or unreadable holder list keeps it too.
+    A holder is foreign when it started after that exit (r3 STOP-hcu3, 2026-10-26), or when
+    it runs inside another Docker container that is still running: this job's own container
+    is gone (the caller checked), so a process in a live container is someone else's (r6
+    STOP-hcu2/3, 2026-10-28: an sglang and a vLLM server started during our evaluation and
+    allocated after our admission). This decides only whether an unconfirmed release is
+    attributable to someone else. It never makes a release confirmed: the receipt keeps the
+    observed VRAM and the not-qualified status. A lingering holder of ours (a host process
+    started before the exit, or one whose container no longer runs) keeps the STOP; an empty
+    or unreadable holder list keeps it too.
     """
     holders = _holders(device)
-    if holders and all(_started_after(pid, exited_epoch) for pid in holders):
-        return holders
-    return None
+    if not holders:
+        return None
+    running = None
+    for pid in holders:
+        if _started_after(pid, exited_epoch):
+            continue
+        container = _container_of(pid)
+        if container is None:
+            return None
+        if running is None:
+            running = _running_containers()
+        if container not in running:
+            return None
+    return holders
 
 
 def main():
@@ -463,7 +496,7 @@ def main():
         if foreign:
             # Still not_qualified with its observed VRAM; only the HCU-wide STOP is withheld.
             terminal_doc['foreign_occupancy'] = {'holders': foreign, 'rule': 'every holder started after '
-                                                 'this container exited'}
+                                                 'this container exited or runs in another live container'}
         _write_receipt(terminal, terminal_doc)
         if not foreign and (after_vram != '0%' or after_kfd is not False or container_live is not False):
             _stop_for_unknown_release(job_id, 'device_release_not_confirmed: ' + reason)
