@@ -273,6 +273,29 @@ class HcuRunTests(unittest.TestCase):
                 self.assertIsNone(hcu_run._foreign_occupancy(3, 2000.0))
             self.assertFalse(real(9999, 2000.0, root))
 
+    def test_a_holder_in_another_live_container_is_foreign_even_if_it_started_first(self):
+        """r6 STOP-hcu2/3: another user's server started during our evaluation, allocated after
+        our admission, and still held the card when our container was gone."""
+        showpids = "PID: 4242\n\tHCU Index: ['3'] \n"
+        other, gone = 'a' * 64, 'b' * 64
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            ticks = hcu_run.os.sysconf('SC_CLK_TCK')
+            self.proc(root, 4242, (2000 - 1000 - 60) * ticks)
+            real_started, real_container = hcu_run._started_after, hcu_run._container_of
+            for cgroup, running, expected in (
+                    ('11:devices:/docker/%s\n' % other, other + '\n', [4242]),
+                    ('0::/system.slice/docker-%s.scope\n' % other, other + '\n', [4242]),
+                    ('11:devices:/docker/%s\n' % gone, other + '\n', None),
+                    ('11:devices:/user.slice\n', other + '\n', None)):
+                (root / '4242' / 'cgroup').write_text(cgroup)
+                outputs = {('hy-smi', '--showpids'): showpids, ('docker', 'ps', '-q', '--no-trunc'): running}
+                with self.subTest(cgroup=cgroup), \
+                     mock.patch.object(hcu_run.subprocess, 'check_output', side_effect=lambda argv, **_: outputs[tuple(argv)]), \
+                     mock.patch.object(hcu_run, '_started_after', side_effect=lambda pid, epoch: real_started(pid, epoch, root)), \
+                     mock.patch.object(hcu_run, '_container_of', side_effect=lambda pid: real_container(pid, root)):
+                    self.assertEqual(hcu_run._foreign_occupancy(3, 2000.0), expected)
+
     def test_one_lingering_holder_of_ours_beside_a_foreign_one_keeps_the_stop(self):
         showpids = "PID: 4242\n\tHCU Index: ['3'] \nPID: 1616893\n\tHCU Index: ['3'] \n"
         with tempfile.TemporaryDirectory() as tmp:
